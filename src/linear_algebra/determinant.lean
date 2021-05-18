@@ -285,6 +285,10 @@ lemma basis.is_unit_det (e' : basis ι R M) : is_unit (e.det e') :=
 
 variables {A : Type*} [integral_domain A] [module A M]
 
+@[simp]
+lemma basis.constr_comp (f : M →ₗ[R] M) (v : ι → M) : e.constr ℕ (f ∘ v) = f.comp (e.constr ℕ v) :=
+e.ext (λ i, by simp only [basis.constr_basis, linear_map.comp_apply])
+
 @[simp] lemma basis.det_comp (e : basis ι A M) (f : M →ₗ[A] M) (v : ι → M) :
   e.det (f ∘ v) = f.det * e.det v :=
 by { rw [basis.det_apply, basis.det_apply, ← f.det_to_matrix e, ← matrix.det_mul,
