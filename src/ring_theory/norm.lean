@@ -60,6 +60,8 @@ linear_map.det.comp (lmul R S).to_ring_hom.to_monoid_hom
 
 @[simp] lemma norm_apply (x : S) : norm R x = linear_map.det (lmul R S x) := rfl
 
+variables {S}
+
 lemma norm_eq_one_of_not_exists_basis
   (h : ¬ ∃ (s : finset S), nonempty (basis s R S)) (x : S) : norm R x = 1 :=
 by { rw [norm_apply, linear_map.det], split_ifs with h, refl }
@@ -81,6 +83,26 @@ begin
   { ext i j, rw [to_matrix_lsmul, matrix.diagonal] },
   { rw [finset.prod_const, finset.card_univ] }
 end
+
+lemma basis.nonempty_index {ι R M : Type*} [semiring R] [add_comm_monoid M] [module R M]
+  (b : basis ι R M) [nontrivial M] : nonempty ι :=
+begin
+  obtain ⟨x, hx⟩ := exists_ne (0 : M),
+  have := b.repr.injective.ne hx,
+  contrapose! this,
+  ext i,
+  have : nonempty ι := ⟨i⟩,
+  contradiction
+end
+
+lemma basis.card_pos {R M : Type*} [semiring R] [add_comm_monoid M] [module R M]
+  (b : basis ι R M) [nontrivial M] : 0 < fintype.card ι :=
+fintype.card_pos_iff.mpr (basis.nonempty_index b)
+
+-- TODO: make this `simp` when we have a typeclass like `module.finite_free R S`
+lemma norm_zero_of_basis (b : basis ι R S) :
+  norm R S 0 = 0 :=
+by rw [← (algebra_map R S).map_zero, norm_algebra_map_of_basis b, zero_pow (basis.card_pos b)]
 
 /-- If `x` is in the base field `K`, then the norm is `x ^ [L : K]`.
 
@@ -126,6 +148,10 @@ namespace ideal
 
 open_locale classical
 
+section
+
+variables (R)
+
 def restrict_scalars_equiv (I : ideal S) : submodule.restrict_scalars R I ≃ₗ[R] I :=
 -- Everything is defeq except scalar multiplication.
 { to_fun := λ x, x,
@@ -136,6 +162,16 @@ def restrict_scalars_equiv (I : ideal S) : submodule.restrict_scalars R I ≃ₗ
          rw [← is_scalar_tower.algebra_map_smul S c (⟨x, hx⟩ : I),
              submodule.coe_smul, submodule.coe_smul, is_scalar_tower.algebra_map_smul] },
   .. add_equiv.refl I }
+
+@[simp] lemma coe_restrict_scalars_equiv (I : ideal S) (x : submodule.restrict_scalars R I) :
+  (restrict_scalars_equiv R I x : S) = x :=
+rfl
+
+@[simp] lemma coe_restrict_scalars_equiv_symm (I : ideal S) (x : I) :
+  ((restrict_scalars_equiv R I).symm x : S) = x :=
+rfl
+
+end
 
 /-- A nonzero ideal has the same rank (over a subring) as the whole ring. -/
 lemma rank_eq {n m : Type*} [fintype n] [fintype m]
@@ -166,28 +202,100 @@ to choose one of the non-units.
 noncomputable def norm_aux {n : Type*} [fintype n]
   (b : basis n R S) (I : ideal S) (hI : I ≠ ⊥) : R :=
 let mc'' := submodule.basis_of_pid b (submodule.restrict_scalars R I),
-  c' : basis (fin mc''.1) R I := mc''.2.map (restrict_scalars_equiv I),
+  c' : basis (fin mc''.1) R I := mc''.2.map (restrict_scalars_equiv R I),
   c : basis n R I := c'.reindex (fintype.equiv_of_card_eq (ideal.rank_eq b hI c'))
 in normalize $ b.det (coe ∘ c : n → S)
 
+@[simp] lemma basis.reindex_refl {R M : Type*} [comm_ring R] [add_comm_group M] [module R M]
+  (b : basis ι R M) : b.reindex (equiv.refl _) = b :=
+by { ext, simp }
+
+lemma basis.associated_det_of_eq_linear_equiv_comp {R M : Type*} [integral_domain R]
+  [add_comm_group M] [module R M] (b : basis ι R M) (v v' : ι → M) (f : M ≃ₗ[R] M)
+  (h : ∀ i, v i = f (v' i)) : associated (b.det v) (b.det v') :=
+begin
+  suffices : associated (b.det (f.to_linear_map ∘ v')) (b.det v'),
+  { convert this, ext i, simpa using h i },
+  rw [← one_mul (b.det v'), b.det_comp],
+  exact associated_mul_mul (associated_one_iff_is_unit.mpr f.is_unit_det') (associated.refl _)
+end
+
+lemma associated_det_map_basis_aux {R M N n : Type*} [integral_domain R]
+  [add_comm_group M] [module R M] [add_comm_group N] [module R N] [fintype n]
+  (b : basis n R M) (c c' : basis n R N) (f : N →ₗ[R] M) :
+  associated (b.det (f ∘ c)) (b.det (f ∘ c')) :=
+begin
+  let g : M ≃ₗ[R] N := b.equiv c (equiv.refl _),
+  have g_symm_comp_self : g.symm ∘ g = id, { ext, apply g.symm_apply_apply },
+  have det_eq : ∀ (c : basis n R N),
+    b.det (f ∘ c) = linear_map.det (g.to_linear_map.comp f) * (b.map g).det c,
+  { intro c,
+    rw [← function.left_id (f ∘ c), ← g_symm_comp_self, function.comp.assoc, ← basis.det_map,
+        ← g.coe_to_linear_map, ← function.comp.assoc, ← linear_map.coe_comp, basis.det_comp] },
+  rw [det_eq c, det_eq c'],
+  refine associated_mul_mul (associated.refl _) _,
+  refine basis.associated_det_of_eq_linear_equiv_comp _ _ _ (c'.equiv c (equiv.refl _)) (λ i, _),
+  rw [← c'.map_apply, c'.map_equiv, c.reindex_apply, equiv.symm_symm, equiv.refl_apply]
+end
+
+lemma associated_det_map_basis {R M N n n' : Type*} [integral_domain R]
+  [add_comm_group M] [module R M] [add_comm_group N] [module R N] [fintype n] [fintype n']
+  (b : basis n R M) (b' : basis n' R M) (c : basis n R N) (c' : basis n' R N) (f : N →ₗ[R] M) :
+  associated (b.det (f ∘ c)) (b'.det (f ∘ c')) :=
+begin
+  let e : n ≃ n' := b.index_equiv b',
+  rw [← basis.det_reindex_symm b' (f ∘ c' : n' → M) e, ← b.map_equiv b' e,
+      basis.det_map],
+  refine (associated_det_map_basis_aux b c (c'.reindex e.symm) _).trans
+    (basis.associated_det_of_eq_linear_equiv_comp _ _ _ (b.equiv b' e) (λ i, _)),
+  simp_rw [function.comp_app, linear_equiv.apply_symm_apply, basis.reindex_apply, equiv.symm_symm]
+end
+
+@[simp] lemma submodule.coe_subtype {R M : Type*} [comm_ring R] [add_comm_group M] [module R M]
+  (S : submodule R M) :
+  (S.subtype : S → M) = coe := rfl
+
+@[simp] lemma normalize_associated_iff {x y : R} :
+  associated (normalize x) y ↔ associated x y :=
+⟨λ h, associated_normalize.trans h,
+ λ h, normalize_associated.trans h⟩
+
 /-- `norm_aux` does not depend on the choice of basis, up to units. -/
-lemma norm_aux_eq {n n' : Type*} [fintype n] [fintype n']
+lemma norm_aux_associated {n n' : Type*} [fintype n] [fintype n']
   (b : basis n R S) (b' : basis n' R S) (I : ideal S) (hI : I ≠ ⊥) (c : basis n' R I) :
   associated (norm_aux b I hI) (b'.det (coe ∘ c : n' → S)) :=
 begin
-  simp only [norm_aux, basis.det_apply],
-  sorry
-  /- -- Doesn't work because the indexing types mismatch.
-  rw [← b'.to_matrix_mul_to_matrix b, ← one_mul (normalize _), matrix.det_mul],
-  apply associated_mul_mul (associated_one_iff_is_unit.mpr (b'.is_unit_det b)).symm _,
-  exact normalize_associated
-  -/
+  simp only [norm_aux, ← submodule.coe_subtype],
+  rw normalize_associated_iff,
+  -- TODO: `exact associated_det_map_basis b b' _ c (submodule.subtype I)` times out
+  have := associated_det_map_basis b b' _ c (submodule.subtype I),
+  exact this
 end
 
 @[simp] lemma normalize_norm_aux {n : Type*} [fintype n]
   (b : basis n R S) (I : ideal S) (hI : I ≠ ⊥) :
   normalize (norm_aux b I hI) = norm_aux b I hI :=
 normalize_idem _
+
+/-- `norm_aux` does not depend on the choice of basis, up to units. -/
+lemma eq_norm_aux {n n' : Type*} [fintype n] [fintype n']
+  (b : basis n R S) (b' : basis n' R S) (I : ideal S) (hI : I ≠ ⊥) (c : basis n' R I) :
+  normalize (b'.det (coe ∘ c : n' → S)) = norm_aux b I hI :=
+begin
+  rw ← normalize_norm_aux,
+  refine normalize_eq_normalize_iff.mpr (dvd_dvd_of_associated (associated.symm _)),
+  apply norm_aux_associated
+end
+
+lemma norm_aux_mul (b : basis ι R S) (I J : ideal S)
+  (hI : I ≠ ⊥) (hJ : J ≠ ⊥) (hIJ : I * J ≠ ⊥ := mt ideal.mul_eq_bot.mp (not_or hI hJ)) :
+  norm_aux b (I * J) hIJ = norm_aux b I hI * norm_aux b J hJ :=
+begin
+  -- Let `cI` be a basis for `I` and `cJ` be a basis for `J`,
+  -- then we'll show that `λ i, cI i * cJ i` is a basis for `I * J`
+  -- with det equal to the product `det cI * det cJ`.
+  sorry
+end
 
 section
 
@@ -207,7 +315,9 @@ else if hS : ∃ (s : set S) (b : basis s R S), s.finite
 
 end
 
-/-- Choosing a basis for an ideal and then normalizing the determinant gives the nrom -/
+@[simp] lemma norm_bot : ideal.norm R (⊥ : ideal S) = 0 := dif_pos rfl
+
+/-- Choosing a basis for an ideal and then normalizing the determinant gives the norm -/
 @[simp] lemma normalize_det_basis {n : Type*} [fintype n]
   (b : basis n R S) (I : ideal S) (c : basis n R I) :
   normalize (b.det (coe ∘ c : n → S)) = I.norm R :=
@@ -224,17 +334,99 @@ begin
   have hS : ∃ (s : set S) (b : basis s R S), s.finite,
   { exact ⟨_, b.reindex_range, set.finite_range b⟩ },
   letI : fintype hS.some := hS.some_spec.some_spec.some,
-  rw [dif_pos hS, ← normalize_norm_aux],
-  apply normalize_eq_normalize_iff.mpr,
-  apply dvd_dvd_of_associated,
-  exact (norm_aux_eq hS.some_spec.some _ _ hI c).symm
+  rw dif_pos hS,
+  exact eq_norm_aux hS.some_spec.some _ _ hI c
 end
 
+/-- A basis on `S` gives a basis on `ideal.span {x}`, by multiplying everything by `x`. -/
+noncomputable def basis_span_singleton (b : basis ι R S) {x : S} (hx : x ≠ 0) :
+  basis ι R (span ({x} : set S)) :=
+b.map (linear_equiv.trans
+  (linear_equiv.of_injective (algebra.lmul R S x) (ker_eq_bot.mpr (algebra.lmul_injective hx))) $
+  linear_equiv.trans
+    (linear_equiv.of_eq _ _ (by { ext, simp [mem_span_singleton', mul_comm] }))
+    (restrict_scalars_equiv R (span ({x} : set S))))
+
+@[simp] lemma basis_span_singleton_apply (b : basis ι R S) {x : S} (hx : x ≠ 0) (i : ι) :
+  basis_span_singleton b hx i = ⟨x * b i, mem_span_singleton.mpr (dvd_mul_right _ _)⟩ :=
+begin
+  ext,
+  simp only [basis_span_singleton, basis.map_apply, linear_equiv.trans_apply, subtype.coe_mk,
+      coe_restrict_scalars_equiv, linear_equiv.of_injective_apply, algebra.lmul_apply,
+      linear_equiv.coe_of_eq_apply]
+end
+
+@[simp] lemma constr_basis_span_singleton
+  {N : Type*} [semiring N] [module N S] [smul_comm_class R N S]
+  (b : basis ι R S) {x : S} (hx : x ≠ 0) :
+  b.constr N (coe ∘ basis_span_singleton b hx) = algebra.lmul R S x :=
+b.ext (λ i, by rw [basis.constr_basis, function.comp_app, basis_span_singleton_apply,
+                   subtype.coe_mk, algebra.lmul_apply])
+
+@[simp] lemma ideal.span_zero_singleton : span ({0} : set S) = ⊥ :=
+submodule.span_zero_singleton
+
 -- TODO: make this `simp` when we have a typeclass like `module.finite_free R S`
-lemma norm_span_singleton {n : Type*} [fintype n] (b : basis n R S) (x : S) :
+/-- The ideal norm agrees with the algebra norm on ideals generated by one element. -/
+lemma norm_span_singleton (b : basis ι R S) (x : S) :
   ideal.norm R (span ({x} : set S)) = normalize (algebra.norm R S x) :=
-calc ideal.norm R (span ({x} : set S))
-    = _ : (normalize_det_basis b (span {x}) _).symm
-... = _ : _
+begin
+  by_cases hx : x = 0,
+  { simp [hx, algebra.norm_zero_of_basis b] },
+  calc ideal.norm R (span ({x} : set S))
+      = normalize (b.det (coe ∘ (basis_span_singleton b hx) : ι → S)) :
+    (normalize_det_basis _ _ _).symm
+  ... = normalize (algebra.norm R S x) : _,
+  rw [algebra.norm_apply, ← linear_map.det_to_matrix b, basis.det_apply,
+      basis.to_matrix_eq_to_matrix_constr, constr_basis_span_singleton]
+end
+
+@[simp] lemma span_singleton_one' : span ({1} : set S) = ⊤ :=
+span_singleton_one
+
+@[simp] lemma norm_top : ideal.norm R (⊤ : ideal S) = 1 :=
+begin
+  by_cases hS : ∃ (s : set S) (b : basis s R S), s.finite,
+  swap, { exact (dif_neg top_ne_bot).trans (dif_neg hS) },
+  letI : fintype hS.some := hS.some_spec.some_spec.some,
+  rw [← span_singleton_one', norm_span_singleton hS.some_spec.some, monoid_hom.map_one,
+      normalize.map_one]
+end
+
+/-- Multiplicity of the norm -/
+theorem norm_mul (I J : ideal S) : (I * J).norm R = I.norm R * J.norm R :=
+begin
+  by_cases hI : I = ⊥,
+  { simp [hI] },
+  by_cases hJ : J = ⊥,
+  { simp [hJ] },
+  have hIJ : I * J ≠ ⊥ := mt ideal.mul_eq_bot.mp (not_or hI hJ),
+  unfold ideal.norm,
+  rw [dif_neg hI, dif_neg hJ, dif_neg hIJ],
+  split_ifs with hS,
+  swap, { simp }, -- Handle the non-free-finite case first.
+  letI : fintype hS.some := hS.some_spec.some_spec.some,
+  exact norm_aux_mul hS.some_spec.some I J hI hJ hIJ
+end
+
+lemma algebra_map_norm_mem (b : basis ι R S) (I : ideal S) :
+  algebra_map R S (I.norm R) ∈ I :=
+sorry -- TODO: via Lagrange's theorem?
+
+lemma is_unit_norm_iff (b : basis ι R S) (x : S) :
+  is_unit (ideal.norm R (span ({x} : set S))) ↔ is_unit x :=
+iff.trans
+  ⟨λ h, ideal.eq_top_of_is_unit_mem _ (algebra_map_norm_mem b _) ((algebra_map R S).is_unit_map h),
+   λ h, have is_unit (1 : R) := is_unit_one, by rwa [h, ideal.norm_top]⟩
+  span_singleton_eq_top
 
 end ideal
+
+@[simp] lemma is_unit_normalize [normalization_monoid S] {x : S} :
+  is_unit (normalize x) ↔ is_unit x :=
+by rw [← @normalize_eq_one _ _ _ _ x, ← normalize_eq_one, normalize_idem]
+
+theorem algebra.is_unit_norm_iff [is_principal_ideal_ring R] [normalization_monoid R]
+  (b : basis ι R S) (x : S) :
+  is_unit (algebra.norm R S x) ↔ is_unit x :=
+by rw [← is_unit_normalize, ← ideal.norm_span_singleton b x, ideal.is_unit_norm_iff b]
