@@ -6,6 +6,9 @@ Authors: Anne Baanen
 
 import linear_algebra.char_poly.coeff
 import linear_algebra.determinant
+-- import ring_theory.dedekind_domain
+-- import ring_theory.fractional_ideal
+import ring_theory.localization
 import ring_theory.power_basis
 
 /-!
@@ -46,6 +49,7 @@ variables {ι : Type w} [fintype ι]
 open finite_dimensional
 open linear_map
 open matrix
+open ring
 
 open_locale big_operators
 open_locale matrix
@@ -146,41 +150,6 @@ end algebra
 
 namespace ideal
 
-open_locale classical
-
-section
-
-variables (R)
-
-def restrict_scalars_equiv (I : ideal S) : submodule.restrict_scalars R I ≃ₗ[R] I :=
--- Everything is defeq except scalar multiplication.
-{ to_fun := λ x, x,
-  inv_fun := λ x, x,
-  map_smul' := λ c x,
-    by { ext,
-         cases x with x hx,
-         rw [← is_scalar_tower.algebra_map_smul S c (⟨x, hx⟩ : I),
-             submodule.coe_smul, submodule.coe_smul, is_scalar_tower.algebra_map_smul] },
-  .. add_equiv.refl I }
-
-@[simp] lemma coe_restrict_scalars_equiv (I : ideal S) (x : submodule.restrict_scalars R I) :
-  (restrict_scalars_equiv R I x : S) = x :=
-rfl
-
-@[simp] lemma coe_restrict_scalars_equiv_symm (I : ideal S) (x : I) :
-  ((restrict_scalars_equiv R I).symm x : S) = x :=
-rfl
-
-/-- `I.subtype R` is the `R`-linear embedding of `I : ideal S` into `S`. -/
-@[simps]
-def subtype (I : ideal S) : I →ₗ[R] S :=
-{ to_fun := λ x, x,
-  map_smul' := λ c x, by rw [← is_scalar_tower.algebra_map_smul S c x, submodule.coe_smul,
-                             is_scalar_tower.algebra_map_smul],
-  .. submodule.subtype I }
-
-end
-
 /-- A nonzero ideal has the same rank (over a subring) as the whole ring. -/
 lemma rank_eq {n m : Type*} [fintype n] [fintype m]
   (b : basis n R S) {I : ideal S} (hI : I ≠ ⊥) (c : basis m R I) :
@@ -205,7 +174,7 @@ noncomputable def basis_of_ne_bot [is_principal_ideal_ring R] (b : basis ι R S)
   (I : ideal S) (hI : I ≠ ⊥) :
   basis ι R I :=
 let mc'' := submodule.basis_of_pid b (submodule.restrict_scalars R I),
-    c' : basis (fin mc''.1) R I := mc''.2.map (restrict_scalars_equiv R I) in
+    c' : basis (fin mc''.1) R I := mc''.2.map (submodule.restrict_scalars_equiv I) in
 c'.reindex (fintype.equiv_of_card_eq (ideal.rank_eq b hI c'))
 
 variables [normalization_monoid R]
@@ -219,7 +188,7 @@ Note that such isomorphisms exist for all nonzero ideals if `S` is finite free o
 See `ideal.norm` for a version that chooses a value in this case.
 -/
 noncomputable def norm_aux (I : ideal S) (e : S ≃ₗ[R] I) : R :=
-normalize $ linear_map.det ((ideal.subtype R I).comp e)
+normalize $ linear_map.det (((submodule.subtype I).restrict_scalars R).comp e)
 
 @[simp] lemma normalize_norm_aux (I : ideal S) (e : S ≃ₗ[R] I) :
   normalize (norm_aux I e) = norm_aux I e :=
@@ -295,12 +264,12 @@ end
 
 /-- `norm_aux` does not depend on the choice of equiv `S ≃ₗ I`, up to units. -/
 lemma norm_aux_associated (I : ideal S) (e e' : S ≃ₗ[R] I) :
-  associated (norm_aux I e) (linear_map.det $ (ideal.subtype R I).comp e') :=
+  associated (norm_aux I e) (linear_map.det $ (I.subtype.restrict_scalars R).comp e') :=
 by { simp only [norm_aux, normalize_associated_iff], apply associated_det_comp_equiv }
 
 /-- `norm_aux` does not depend on the choice of equiv `S ≃ₗ I`, up to units. -/
 lemma eq_norm_aux (I : ideal S) (e e' : S ≃ₗ[R] I) :
-  normalize (linear_map.det $ (ideal.subtype R I).comp e') = norm_aux I e :=
+  normalize (linear_map.det $ (I.subtype.restrict_scalars R).comp e') = norm_aux I e :=
 begin
   rw ← normalize_norm_aux,
   refine normalize_eq_normalize_iff.mpr (dvd_dvd_of_associated (associated.symm _)),
@@ -336,6 +305,7 @@ le_antisymm
       (λ c' x hx, by simpa only [smul_comm c c'] using submodule.smul_mem _ c' hx)))
   (submodule.mul_le.mpr (λ x hx y hy, ideal.mul_mem_mul hx hy))
 
+/-
 lemma norm_aux_mul (I J : ideal S)
   (eI : S ≃ₗ[R] I) (eJ : S ≃ₗ[R] J) (eIJ : S ≃ₗ[R] (I * J : ideal _)) :
   norm_aux (I * J) eIJ = norm_aux I eI * norm_aux J eJ :=
@@ -343,11 +313,15 @@ begin
   unfold norm_aux,
   rw [← normalize.map_mul, ← linear_map.det.map_mul, normalize_eq_normalize_iff],
   apply dvd_dvd_of_associated,
-  refine linear_map.associated_det_of_eq_comp _ _ _ _;
-    sorry
+  refine linear_map.associated_det_of_eq_comp (linear_equiv.refl _ _) _ _ _,
+  intro x,
+  simp
 end
+-/
 
 variables [is_principal_ideal_ring R]
+
+open_locale classical
 
 section
 
@@ -374,7 +348,7 @@ end
 @[simp] lemma normalize_det_equiv {n : Type*} [fintype n]
   (b : basis n R S) (I : ideal S) (hI : I ≠ ⊥)
   (e : S ≃ₗ[R] I := b.equiv (I.basis_of_ne_bot b hI) (equiv.refl _)) :
-  normalize ((I.subtype R).comp ↑e).det = I.norm R :=
+  normalize ((I.subtype.restrict_scalars R).comp ↑e).det = I.norm R :=
 begin
   unfold ideal.norm,
   rw dif_neg hI,
@@ -385,6 +359,8 @@ begin
   apply eq_norm_aux
 end
 
+open submodule
+
 /-- A basis on `S` gives a basis on `ideal.span {x}`, by multiplying everything by `x`. -/
 noncomputable def basis_span_singleton (b : basis ι R S) {x : S} (hx : x ≠ 0) :
   basis ι R (span ({x} : set S)) :=
@@ -392,14 +368,14 @@ b.map (linear_equiv.trans
   (linear_equiv.of_injective (algebra.lmul R S x) (ker_eq_bot.mpr (algebra.lmul_injective hx))) $
   linear_equiv.trans
     (linear_equiv.of_eq _ _ (by { ext, simp [mem_span_singleton', mul_comm] }))
-    (restrict_scalars_equiv R (span ({x} : set S))))
+    (restrict_scalars_equiv (span ({x} : set S))))
 
 @[simp] lemma basis_span_singleton_apply (b : basis ι R S) {x : S} (hx : x ≠ 0) (i : ι) :
   basis_span_singleton b hx i = ⟨x * b i, mem_span_singleton.mpr (dvd_mul_right _ _)⟩ :=
 begin
   ext,
   simp only [basis_span_singleton, basis.map_apply, linear_equiv.trans_apply, subtype.coe_mk,
-      coe_restrict_scalars_equiv, linear_equiv.of_injective_apply, algebra.lmul_apply,
+      restrict_scalars_equiv_apply, linear_equiv.of_injective_apply, algebra.lmul_apply,
       linear_equiv.coe_of_eq_apply]
 end
 
@@ -453,7 +429,7 @@ begin
   split_ifs with hS,
   swap, { simp }, -- Handle the non-free-finite case first.
   letI : fintype hS.some := hS.some_spec.some_spec.some,
-  exact norm_aux_mul hS.some_spec.some I J hI hJ hIJ
+  sorry
 end
 
 lemma algebra_map_norm_mem (b : basis ι R S) (I : ideal S) :
@@ -477,3 +453,337 @@ theorem algebra.is_unit_norm_iff [is_principal_ideal_ring R] [normalization_mono
   (b : basis ι R S) (x : S) :
   is_unit (algebra.norm R S x) ↔ is_unit x :=
 by rw [← is_unit_normalize, ← ideal.norm_span_singleton b x, ideal.is_unit_norm_iff b]
+
+section int
+
+/-! ### The ideal norm as an integer
+
+When the base ring is `ℤ`, we can show multiplicity by applying the Chinese Remainder Theorem.
+-/
+
+/-- If `M` is finite free over a PID `R`, then any submodule `N` is free
+and we can find a basis for `M` and `N` such that the inclusion map is a diagonal matrix. -/
+theorem submodule.smith_normal_form {O : Type*} [add_comm_group O] [module R O]
+  {ι : Type*} [fintype ι] (b : basis ι R O) (N : submodule R O) :
+  ∃ (n : ℕ) (b' : basis ι R O) (f : fin n → ι) (a : fin n → R) (ab' : basis (fin n) R N),
+  ∀ i, (ab' i : O) = a i • b' (f i) :=
+sorry -- TODO: strengthen `submodule.basis_of_pid`
+
+/-- If `S` is a finite free extension of a PID `R`, then any nonzero ideal `I` is free
+and we can find a basis for `S` and `I` such that the inclusion map is a diagonal matrix. -/
+theorem ideal.smith_normal_form (b : basis ι R S) (I : ideal S) (hI : I ≠ ⊥) :
+  ∃ (b' : basis ι R S) (a : ι → R) (ab' : basis ι R I),
+  ∀ i, (ab' i : S) = a i • b' i :=
+begin
+  obtain ⟨n, b', g', a', ab', ab_eq⟩ := submodule.smith_normal_form b (I.restrict_scalars R),
+  let ab : basis (fin n) R I := ab'.map I.restrict_scalars_equiv,
+  have g'_inj := sorry, -- because `ab'` is linear independent
+  have g'_bij := (fintype.bijective_iff_injective_and_card g').mpr ⟨g'_inj, ideal.rank_eq b' hI ab⟩,
+  let g : fin n ≃ ι := equiv.of_bijective g' g'_bij,
+  have g_apply : ∀ i, g i = g' i := λ i, rfl,
+  let a : ι → R := a' ∘ g.symm,
+  have a_apply : ∀ i, a i = a' (g.symm i) := λ i, rfl,
+  use [b', a, ab.reindex g],
+  intro i,
+  rw [← g.apply_symm_apply i, a_apply, g.symm_apply_apply, basis.reindex_apply, g.symm_apply_apply],
+  simp only [ab_eq, ab'.map_apply, I.restrict_scalars_equiv_apply, equiv.of_bijective_apply],
+end
+
+-- TODO: why doesn't this work "normally"?
+lemma normalize_prod {ι : Type*} (a : ι → ℤ) (s : finset ι) :
+  normalize (∏ i in s, a i) = ∏ i in s, normalize (a i) :=
+monoid_hom.map_prod (normalize.to_monoid_hom : ℤ →* ℤ) a s
+
+/-
+/-- If `P` is a submodule of `M`, and `f : M →ₗ N` has a kernel that contains `P`,
+lift it to the quotient by `P`. -/
+def submodule.quotient.lift {M N : Type*}
+  [add_comm_group M] [module R M] [add_comm_group N] [module R N]
+  (P : submodule R M) (f : M →ₗ[R] N) (hf : ∀ x ∈ P, f x = 0) :
+  P.quotient →ₗ[R] N :=
+{ to_fun := λ x, quotient.lift_on' x f $ λ a b h, eq_of_sub_eq_zero $ by rw [← f.map_sub, hf _ h],
+  map_add' := λ a₁ a₂, quotient.induction_on₂' a₁ a₂ f.map_add,
+  map_smul' := λ c a, quotient.induction_on' a (f.map_smul c) }
+
+@[simp] def submodule.quotient.lift_mk {M N : Type*}
+  [add_comm_group M] [module R M] [add_comm_group N] [module R N]
+  (P : submodule R M) (f : M →ₗ[R] N) (hf : ∀ x ∈ P, f x = 0) (x : M) :
+  submodule.quotient.lift P f hf (submodule.quotient.mk x) = f x :=
+rfl
+
+def submodule.quotient.mk_hom {M : Type*} [add_comm_group M] [module R M]
+  {P : submodule R M} : M →ₗ[R] P.quotient :=
+{ to_fun := submodule.quotient.mk,
+  map_add' := λ x y, submodule.quotient.mk_add _,
+  map_smul' := λ c x, submodule.quotient.mk_smul _ }
+
+/-- If `P` is a submodule of `M` and `Q` a submodule of `N`, and `f : M →ₗ N` maps `P` to a
+subset of `Q`, then lift `f` to a map `P.quotient →ₗ Q.quotient`. -/
+def submodule.quotient.map {M N : Type*}
+  [add_comm_group M] [module R M] [add_comm_group N] [module R N]
+  (P : submodule R M) (Q : submodule R N) (f : M →ₗ[R] N) (hf : ∀ x ∈ P, f x ∈ Q) :
+  P.quotient →ₗ[R] Q.quotient :=
+submodule.quotient.lift P (submodule.quotient.mk_hom.comp f)
+  (λ x hx, (submodule.quotient.mk_eq_zero _).mpr (hf _ hx))
+
+@[simp] def submodule.quotient.map_mk {M N : Type*}
+  [add_comm_group M] [module R M] [add_comm_group N] [module R N]
+  (P : submodule R M) (Q : submodule R N) (f : M →ₗ[R] N) (hf : ∀ x ∈ P, f x ∈ Q)
+  (x : M) : submodule.quotient.map P Q f hf (submodule.quotient.mk x) = submodule.quotient.mk (f x) :=
+rfl
+-/
+
+/-- If `P` is a submodule of `M` and `Q` a submodule of `N`,
+and `f : M ≃ₗ N` maps `P` to `Q`, then `M.quotient` is equivalent to `N.quotient`. -/
+@[simps] def submodule.quotient.equiv {M N : Type*}
+  [add_comm_group M] [module R M] [add_comm_group N] [module R N]
+  (P : submodule R M) (Q : submodule R N)
+  (f : M ≃ₗ[R] N) (hf : P.map ↑f = Q) : P.quotient ≃ₗ[R] Q.quotient :=
+{ to_fun := P.mapq Q ↑f (λ x hx, hf ▸ submodule.mem_map_of_mem hx),
+  inv_fun := Q.mapq P ↑f.symm (λ x hx, begin
+    rw [← hf, submodule.mem_map] at hx,
+    obtain ⟨y, hy, rfl⟩ := hx,
+    simpa
+  end),
+  left_inv := λ x, quotient.induction_on' x (by simp),
+  right_inv := λ x, quotient.induction_on' x (by simp),
+  .. P.mapq Q ↑f (λ x hx, hf ▸ submodule.mem_map_of_mem hx) }
+
+.
+
+-- TODO: this could be a linear equiv, if `submodule.quotient` gets a more general
+-- `has_scalar` instance.
+/-- Restricting the scalars of a submodule doesn't change the quotient you get. -/
+@[simps] def submodule.restrict_scalars_quotient_equiv {M : Type*}
+  [add_comm_group M] [module R M] [module S M] [is_scalar_tower R S M]
+  (P : submodule S M) : (P.restrict_scalars R).quotient ≃ P.quotient :=
+{ to_fun := quot.map id (λ x y, id),
+  inv_fun := quot.map id (λ x y, id),
+  left_inv := λ x, quot.induction_on x (λ x', rfl),
+  right_inv := λ x, quot.induction_on x (λ x', rfl) }
+
+@[simps] def submodule_span_quotient_equiv (s : set S) :
+  (submodule.span S s).quotient ≃ₗ[S] (ideal.span s).quotient :=
+{ to_fun := quot.map id (λ x y, id),
+  inv_fun := quot.map id (λ x y, id),
+  left_inv := λ x, quot.induction_on x (λ x', rfl),
+  right_inv := λ x, quot.induction_on x (λ x', rfl),
+  map_add' := λ x y, quot.induction_on₂ x y (λ x' y', rfl),
+  map_smul' := λ c x, quot.induction_on x (λ x', rfl) }
+
+lemma basis.mem_submodule_iff {M : Type*} [add_comm_group M] [module R M] {P : submodule R M}
+  (b : basis ι R P) {x : M} :
+  x ∈ P ↔ ∃ (c : ι → R), x = ∑ i, c i • b i :=
+begin
+  split,
+  { intro hx, use b.equiv_fun ⟨x, hx⟩,
+    show P.subtype ⟨x, hx⟩ = ∑ (i : ι), b.equiv_fun ⟨x, hx⟩ i • P.subtype (b i),
+    convert congr_arg P.subtype (b.sum_equiv_fun ⟨x, hx⟩).symm,
+    simp only [linear_map.map_sum, linear_map.map_smul] },
+  { rintros ⟨c, rfl⟩,
+    exact P.sum_mem (λ i _, P.smul_mem _ (b i).2) },
+end
+
+lemma basis.mem_ideal_iff {I : ideal S} (b : basis ι R I) {x : S} :
+  x ∈ I ↔ ∃ (c : ι → R), x = ∑ i, c i • b i :=
+(b.map I.restrict_scalars_equiv.symm).mem_submodule_iff
+
+@[simp] lemma basis.repr_sum_self {M : Type*}
+  [add_comm_monoid M] [module R M] (b : basis ι R M) (c : ι → R) :
+  ⇑(b.repr (∑ i, c i • b i)) = c :=
+begin
+  ext j,
+  simp only [linear_equiv.map_sum, linear_equiv.map_smul, basis.repr_self, finsupp.smul_single,
+             smul_eq_mul, mul_one, finset.sum_apply'],
+  rw [finset.sum_eq_single j, finsupp.single_eq_same],
+  { rintros i - hi, exact finsupp.single_eq_of_ne hi },
+  { intros, have := finset.mem_univ j, contradiction }
+end
+
+lemma le_comap_single_pi {ι : Type*} [fintype ι] [decidable_eq ι]
+  {M : ι → Type*} [∀ i, add_comm_group (M i)] [∀ i, module R (M i)]
+  (p : ∀ i, submodule R (M i)) {i} :
+  p i ≤ submodule.comap (single i) (submodule.pi set.univ p) :=
+begin
+  intros x hx,
+  rw [submodule.mem_comap, submodule.mem_pi],
+  rintros j -,
+  by_cases h : j = i,
+  { rwa [h, coe_single, pi.single_eq_same] },
+  { rw [coe_single, pi.single_eq_of_ne h], exact (p j).zero_mem }
+end
+
+/-- Lift a family of maps to the direct sum of quotients. -/
+def submodule.pi_quotient_lift {ι : Type*} [fintype ι] [decidable_eq ι]
+  {M : ι → Type*} [∀ i, add_comm_group (M i)] [∀ i, module R (M i)]
+  {N : Type*} [add_comm_group N] [module R N]
+  (p : ∀ i, submodule R (M i)) (q : submodule R N)
+  (f : Π i, M i →ₗ[R] N) (hf : ∀ i, p i ≤ q.comap (f i)) :
+  (Π i, (p i).quotient) →ₗ[R] q.quotient :=
+linear_map.lsum R (λ i, (p i).quotient) R (λ i, (p i).mapq q (f i) (hf i))
+
+@[simp] lemma submodule.pi_quotient_lift_mk {ι : Type*} [fintype ι] [decidable_eq ι]
+  {M : ι → Type*} [∀ i, add_comm_group (M i)] [∀ i, module R (M i)]
+  {N : Type*} [add_comm_group N] [module R N]
+  (p : ∀ i, submodule R (M i)) (q : submodule R N)
+  (f : Π i, M i →ₗ[R] N) (hf : ∀ i, p i ≤ q.comap (f i)) (x : Π i, M i) :
+  submodule.pi_quotient_lift p q f hf (λ i, submodule.quotient.mk (x i)) =
+    submodule.quotient.mk (linear_map.lsum _ _ R f x) :=
+by rw [submodule.pi_quotient_lift, linear_map.lsum_apply, linear_map.sum_apply,
+       ← submodule.mkq_apply, linear_map.lsum_apply, linear_map.sum_apply, linear_map.map_sum];
+   simp only [linear_map.coe_proj, submodule.mapq_apply, submodule.mkq_apply, linear_map.comp_apply]
+
+@[simp] lemma submodule.pi_quotient_lift_single {ι : Type*} [fintype ι] [decidable_eq ι]
+  {M : ι → Type*} [∀ i, add_comm_group (M i)] [∀ i, module R (M i)]
+  {N : Type*} [add_comm_group N] [module R N]
+  (p : ∀ i, submodule R (M i)) (q : submodule R N)
+  (f : Π i, M i →ₗ[R] N) (hf : ∀ i, p i ≤ q.comap (f i)) (i) (x : (p i).quotient) :
+  submodule.pi_quotient_lift p q f hf (pi.single i x) =
+    submodule.mapq _ _ (f i) (hf i) x :=
+begin
+  simp_rw [submodule.pi_quotient_lift, linear_map.lsum_apply, linear_map.sum_apply,
+           linear_map.comp_apply, linear_map.proj_apply],
+  rw finset.sum_eq_single i,
+  { rw pi.single_eq_same },
+  { rintros j - hj, rw [pi.single_eq_of_ne hj, linear_map.map_zero] },
+  { intros, have := finset.mem_univ i, contradiction },
+end
+
+/-- Lift a family of maps to a quotient of direct sums. -/
+def submodule.quotient_pi_lift {ι : Type*} [fintype ι] [decidable_eq ι]
+  {M : ι → Type*} [∀ i, add_comm_group (M i)] [∀ i, module R (M i)]
+  {N : ι → Type*} [∀ i, add_comm_group (N i)] [∀ i, module R (N i)]
+  (p : ∀ i, submodule R (M i))
+  (f : Π i, M i →ₗ[R] N i) (hf : ∀ i, p i ≤ ker (f i)) :
+  (submodule.pi set.univ p).quotient →ₗ[R] Π i, N i :=
+(submodule.pi set.univ p).liftq (linear_map.pi (λ i, (f i).comp (linear_map.proj i)))
+  (λ x hx, mem_ker.mpr (by { ext i, simpa using hf i (submodule.mem_pi.mp hx i (set.mem_univ i)) }))
+
+@[simp] lemma submodule.quotient_pi_lift_mk {ι : Type*} [fintype ι] [decidable_eq ι]
+  {M : ι → Type*} [∀ i, add_comm_group (M i)] [∀ i, module R (M i)]
+  {N : ι → Type*} [∀ i, add_comm_group (N i)] [∀ i, module R (N i)]
+  (p : ∀ i, submodule R (M i))
+  (f : Π i, M i →ₗ[R] N i) (hf : ∀ i, p i ≤ ker (f i)) (x : Π i, M i) :
+  submodule.quotient_pi_lift p f hf (submodule.quotient.mk x) = λ i, f i (x i) :=
+rfl
+
+@[simp] lemma sum_pi_single {ι : Type*} [fintype ι] [decidable_eq ι]
+  {M : ι → Type*} [∀ i, add_comm_monoid (M i)] (x : Π i, M i) :
+  ∑ i, pi.single i (x i) = x :=
+funext (λ j, begin
+  rw [finset.sum_apply, finset.sum_eq_single j],
+  { simp },
+  { rintros i - hi, exact pi.single_eq_of_ne hi.symm _ },
+  { simp }
+end)
+
+@[simp] lemma linear_map.lsum_single {ι : Type*} [fintype ι] [decidable_eq ι]
+  {M : ι → Type*} [∀ i, add_comm_group (M i)] [∀ i, module R (M i)] :
+  linear_map.lsum R M R linear_map.single = linear_map.id :=
+linear_map.ext (λ x, by simp)
+
+/-- The quotient of a direct sum is the direct sum of quotients -/
+@[simps] def submodule.quotient_pi {ι : Type*} [fintype ι] [decidable_eq ι]
+  {M : ι → Type*} [∀ i, add_comm_group (M i)] [∀ i, module R (M i)]
+  (p : ∀ i, submodule R (M i)) :
+  (submodule.pi set.univ p).quotient ≃ₗ[R] Π i, (p i).quotient :=
+{ to_fun := submodule.quotient_pi_lift p (λ i, (p i).mkq) (λ i, by simpa using le_refl (p i)),
+  inv_fun := submodule.pi_quotient_lift p (submodule.pi set.univ p)
+    linear_map.single (λ i, le_comap_single_pi p),
+  left_inv := λ x, quotient.induction_on' x (λ x',
+    by simp_rw [submodule.quotient.mk'_eq_mk, submodule.quotient_pi_lift_mk, submodule.mkq_apply,
+                submodule.pi_quotient_lift_mk, linear_map.lsum_single, linear_map.id_apply]),
+  right_inv := begin
+    rw [function.right_inverse_iff_comp, ← linear_map.coe_comp, ← @linear_map.id_coe R],
+    refine congr_arg _ (linear_map.pi_ext (λ i x, quotient.induction_on' x (λ x', funext $ λ j, _))),
+    rw [linear_map.comp_apply, submodule.pi_quotient_lift_single, submodule.quotient.mk'_eq_mk,
+        submodule.mapq_apply, submodule.quotient_pi_lift_mk, linear_map.id_apply],
+    sorry -- Why doesn't Lean see that this is the same?!
+  end,
+  .. submodule.quotient_pi_lift p (λ i, (p i).mkq) (λ i, by simpa using le_refl (p i)) }
+
+.
+
+def quotient_equiv (a : ℤ) [fact (a ≠ 0)] : ideal.quotient (ideal.span ({a} : set ℤ)) ≃+* zmod a.nat_abs :=
+by library_search
+
+-- TODO: generalizable to PIDs R where all quotients are finite
+theorem ideal_norm_eq_card (b : basis ι ℤ S) (I : ideal S) [fintype I.quotient] :
+  ideal.norm ℤ I = fintype.card I.quotient :=
+begin
+  -- I is not `⊥` because `I.quotient` is finite but `S` is infinite
+  -- (since it is nontrivial and `b` provides an embedding of `ℤ`).
+  by_cases hI : I = ⊥,
+  { unfreezingI { subst hI }, have : infinite S := sorry, sorry },
+
+  -- Choose `e : S ≃ₗ I` and a basis `b'` for `S` that turns the map
+  -- `f := ((submodule.subtype I).restrict_scalars R).comp e` into a diagonal matrix:
+  -- there is an `a : ι → ℤ` such that `f (b' i) = a i • b' i`.
+  obtain ⟨b', a, ab, ab_eq⟩ := I.smith_normal_form b hI,
+  let e : S ≃ₗ[ℤ] I := b'.equiv ab (equiv.refl _),
+  let f : S →ₗ[ℤ] S := (I.subtype.restrict_scalars ℤ).comp e,
+  let f_apply : ∀ x, f x = b'.equiv ab (equiv.refl _) x := λ x, rfl,
+  have ha : ∀ i, f (b' i) = a i • b' i,
+  { intro i, rw [f_apply, b'.equiv_apply, equiv.refl_apply, ab_eq] },
+  have mem_I_iff : ∀ x, x ∈ I ↔ ∀ i, a i ∣ b'.repr x i,
+  { intro x, simp_rw [ab.mem_ideal_iff, ab_eq],
+    have : ∀ (c : ι → ℤ) i, b'.repr (∑ (j : ι), c j • a j • b' j) i = a i * c i,
+    { intros c i,
+      simp only [← mul_action.mul_smul, b'.repr_sum_self, mul_comm] },
+    split,
+    { rintro ⟨c, rfl⟩ i, exact ⟨c i, this c i⟩ },
+    { rintros ha,
+      choose c hc using ha, exact ⟨c, b'.ext_elem (λ i, trans (hc i) (this c i).symm)⟩ } },
+
+  -- Note that `ideal.norm ℤ I = det f` is equal to `∏ i, a i`,
+  letI := classical.dec_eq ι,
+  calc ideal.norm ℤ I
+      = normalize (linear_map.det f) : (I.normalize_det_equiv b' hI e).symm
+  ... = normalize (linear_map.to_matrix b' b' f).det : by rw det_to_matrix
+  ... = normalize (matrix.diagonal a).det : _
+  ... = normalize (∏ i, a i) : by rw det_diagonal
+  ... = ∏ i, normalize (a i) : normalize_prod a finset.univ
+  ... = fintype.card I.quotient : _,
+  -- since `linear_map.to_matrix b' b' f` is the diagonal matrix with `a` along the diagonal.
+  { congr, ext i j,
+    rw [to_matrix_apply, ha, linear_equiv.map_smul, basis.repr_self, finsupp.smul_single,
+        smul_eq_mul, mul_one],
+    by_cases h : i = j,
+    { rw [h, diagonal_apply_eq, finsupp.single_eq_same] },
+    { rw [diagonal_apply_ne h, finsupp.single_eq_of_ne (ne.symm h)] } },
+
+  -- Now we map everything through the linear equiv `S ≃ₗ (ι → ℤ)`,
+  -- which maps `I` to `I' := Π i, a i ℤ`.
+  let I' : submodule ℤ (ι → ℤ) := submodule.pi set.univ (λ i, submodule.span ℤ ({a i} : set ℤ)),
+  have : submodule.map ↑b'.equiv_fun (I.restrict_scalars ℤ) = I',
+  { ext x,
+    simp only [submodule.mem_map, submodule.mem_pi, submodule.mem_span_singleton, set.mem_univ,
+               submodule.restrict_scalars_mem, mem_I_iff, smul_eq_mul, forall_true_left,
+               linear_equiv.coe_coe, basis.equiv_fun_apply],
+    split,
+    { rintros ⟨y, hy, rfl⟩ i,
+      convert hy i, ext c, rw [mul_comm, eq_comm] },
+    { rintros hdvd,
+      refine ⟨∑ i, x i • b' i, λ i, _, _⟩; rw b'.repr_sum_self,
+      { obtain ⟨c, xi_eq⟩ := hdvd i, use c, rw [mul_comm, xi_eq] } } },
+  let map_I : I.quotient ≃ I'.quotient := -- (This is actually a linear equiv)
+    I.restrict_scalars_quotient_equiv.symm.trans
+    (submodule.quotient.equiv (I.restrict_scalars ℤ) I' b'.equiv_fun this).to_equiv,
+  letI : fintype I'.quotient := fintype.of_equiv I.quotient map_I,
+  rw ← fintype.of_equiv_card map_I,
+
+  -- We get the equiv `Π i, (ℤ / a i ℤ) ≃ₗ (Π i, ℤ) / (Π i, a i ℤ) ≃ₗ S / I `,
+  -- the cardinality of the LHS is `∏ i, a i = det f = ideal.norm ℤ I`
+  -- and the cardinality of the RHS is what we want on the right, QED.
+  haveI a_ne : ∀ i, fact (a i ≠ 0) := sorry,
+  haveI a_pos : ∀ i, fact (0 < (a i).nat_abs) := λ i, ⟨int.nat_abs_pos_of_ne_zero (fact.out (a i ≠ 0))⟩,
+  let I'_quot_equiv : I'.quotient ≃ Π i, zmod (a i).nat_abs :=
+  (submodule.quotient_pi _).to_equiv.trans
+    (equiv.Pi_congr (equiv.refl ι) (λ i,
+      (submodule_span_quotient_equiv {a i}).to_equiv.trans
+      (quotient_equiv (a i)).to_equiv : Π i, (submodule.span ℤ {a i}).quotient ≃ zmod (a i).nat_abs)),
+  simp_rw [fintype.card_eq.mpr ⟨I'_quot_equiv⟩, fintype.card_pi, zmod.card],
+  sorry -- TODO: `normalize = (↑) ∘ nat_abs`
+end
+
+end int

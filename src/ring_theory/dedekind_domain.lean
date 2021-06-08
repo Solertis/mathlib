@@ -106,6 +106,20 @@ structure is_dedekind_domain_dvr : Prop :=
 (is_dvr_at_nonzero_prime : ∀ P ≠ (⊥ : ideal A), P.is_prime →
   discrete_valuation_ring (localization.at_prime P))
 
+/-
+lemma is_dedekind_domain_dvr_iff : is_dedekind_domain_dvr A ↔ is_dedekind_domain A :=
+sorry
+
+instance [is_dedekind_domain A] (P : ideal A) [P.is_prime] :
+  is_principal_ideal_ring (localization.at_prime P) :=
+begin
+  by_cases hP : P = ⊥,
+  { tactic.unfreeze_local_instances, subst hP, sorry },
+  { haveI := ((is_dedekind_domain_dvr_iff A).mpr infer_instance).is_dvr_at_nonzero_prime P hP,
+    apply_instance },
+end
+-/
+
 section inverse
 
 open_locale classical

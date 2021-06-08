@@ -230,6 +230,21 @@ begin
   exact basis.card_le_card_of_linear_independent_aux (fintype.card ι) _ hv,
 end
 
+lemma basis.card_le_card_of_submodule
+  {R : Type*} [integral_domain R] [module R M] (N : submodule R M)
+  {ι : Type*} [fintype ι] (b : basis ι R M)
+  {ι' : Type*} [fintype ι'] (b' : basis ι' R N) :
+  fintype.card ι' ≤ fintype.card ι :=
+b.card_le_card_of_linear_independent (b'.linear_independent.map' N.subtype N.ker_subtype)
+
+lemma basis.card_le_card_of_le
+  {R : Type*} [integral_domain R] [module R M] {N O : submodule R M} (hNO : N ≤ O)
+  {ι : Type*} [fintype ι] (b : basis ι R O)
+  {ι' : Type*} [fintype ι'] (b' : basis ι' R N) :
+  fintype.card ι' ≤ fintype.card ι :=
+b.card_le_card_of_linear_independent
+  (b'.linear_independent.map' (submodule.of_le hNO) (N.ker_of_le O _))
+
 /-- If we have two bases on the same space, their indices are in bijection. -/
 noncomputable def basis.index_equiv {R ι ι' : Type*} [integral_domain R] [module R M]
   [fintype ι] [fintype ι'] (b : basis ι R M) (b' : basis ι' R M) :
@@ -286,9 +301,13 @@ begin
   have a_mem : generator (N.map ϕ) ∈ N.map ϕ := generator_mem _,
 
   -- If `a` is zero, then the submodule is trivial. So let's assume `a ≠ 0`, `N ≠ ⊥`
+  by_cases N_bot : N = ⊥,
+  { rw N_bot,
+    refine ⟨0, basis.empty _ _⟩,
+    rintro ⟨i, ⟨⟩⟩ },
   by_cases a_zero : generator (N.map ϕ) = 0,
-  { rw eq_bot_of_generator_maximal_map_eq_zero b ϕ_max a_zero,
-    exact ⟨0, basis.empty _⟩ },
+  { have := eq_bot_of_generator_maximal_map_eq_zero b ϕ_max a_zero,
+    contradiction },
 
   -- We claim that `ϕ⁻¹ a = y` can be taken as basis element of `N`.
   let y := a_mem.some,
@@ -405,6 +424,41 @@ noncomputable def module.free_of_finite_type_torsion_free' [module.finite R M]
   [no_zero_smul_divisors R M] :
   Σ (n : ℕ), basis (fin n) R M :=
 module.free_of_finite_type_torsion_free module.finite.exists_fin.some_spec.some_spec
+.
+
+/-
+-- TODO!
+
+/-- If `M` is finite free over a PID `R`, then any submodule `N` is free
+and we can find a basis for `M` and `N` such that the inclusion map is a diagonal matrix.
+
+This is a strengthening of `submodule.basis_of_pid`.
+-/
+theorem submodule.smith_normal_form {O : Type*} [add_comm_group O] [module R O]
+  {ι : Type*} [fintype ι] (b : basis ι R O) (N : submodule R O) :
+  ∃ (b' : basis ι R O) (f : fin (submodule.basis_of_pid b N).1 → ι)
+    (a : fin (submodule.basis_of_pid b N).1 → R),
+    ∀ i, ((submodule.basis_of_pid b N).2 i : O) = a i • b' (f i) :=
+begin
+  have hnm : ∀ {M N} (H : N ≤ M), (submodule.basis_of_pid b N).1 ≤ (submodule.basis_of_pid b M).1 :=
+  λ M N H,
+  by simpa using basis.card_le_card_of_le H (submodule.basis_of_pid b M).2 (submodule.basis_of_pid b N).2,
+
+  suffices : ∀ (M : submodule R O) (N ≤ M),
+    ∃ (b' : basis (fin (submodule.basis_of_pid b M).1) R M)
+      (a : fin (submodule.basis_of_pid b N).1 → R),
+      ∀ i, ((submodule.basis_of_pid b N).2 i : O) = a i • b' (fin.cast_le (hnm H) i),
+  { obtain ⟨b', a, h⟩ := this ⊤ N le_top,
+    let b'' : basis _ R O := b'.map (linear_equiv.of_top _ rfl),
+    refine ⟨b''.reindex (b''.index_equiv b), b''.index_equiv b ∘ fin.cast_le (hnm le_top), a, _⟩,
+    simp [h] },
+  intros M,
+  apply M.induction_on_rank,
+end
+
+-/
+
+.
 
 end principal_ideal_domain
 
