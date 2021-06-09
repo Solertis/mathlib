@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Anne Baanen
 -/
 
+import data.matrix.notation
 import linear_algebra.char_poly.coeff
 import linear_algebra.determinant
 -- import ring_theory.dedekind_domain
@@ -489,6 +490,20 @@ begin
   simp only [ab_eq, ab'.map_apply, I.restrict_scalars_equiv_apply, equiv.of_bijective_apply],
 end
 
+noncomputable def ideal.ring_basis (b : basis ι R S) (I : ideal S) (hI : I ≠ ⊥) :
+  basis ι R S := (ideal.smith_normal_form b I hI).some
+
+noncomputable def ideal.self_basis (b : basis ι R S) (I : ideal S) (hI : I ≠ ⊥) :
+  basis ι R I := (ideal.smith_normal_form b I hI).some_spec.some_spec.some
+
+noncomputable def ideal.smith_coeffs (b : basis ι R S) (I : ideal S) (hI : I ≠ ⊥) :
+  ι → R := (ideal.smith_normal_form b I hI).some_spec.some
+
+@[simp]
+lemma ideal.self_basis_def (b : basis ι R S) (I : ideal S) (hI : I ≠ ⊥) :
+  ∀ i, (ideal.self_basis b I hI i : S) = ideal.smith_coeffs b I hI i • ideal.ring_basis b I hI i :=
+(ideal.smith_normal_form b I hI).some_spec.some_spec.some_spec
+
 -- TODO: why doesn't this work "normally"?
 lemma normalize_prod {ι : Type*} (a : ι → ℤ) (s : finset ι) :
   normalize (∏ i in s, a i) = ∏ i in s, normalize (a i) :=
@@ -551,16 +566,39 @@ and `f : M ≃ₗ N` maps `P` to `Q`, then `M.quotient` is equivalent to `N.quot
 
 .
 
--- TODO: this could be a linear equiv, if `submodule.quotient` gets a more general
--- `has_scalar` instance.
+-- TODO: make this the main `submodule.quotient.module` instance
+instance submodule.quotient.module'
+  {M : Type*} [add_comm_group M] [module R M] [module S M] [is_scalar_tower R S M]
+  (P : submodule S M) : module R P.quotient :=
+module.of_core { smul := λ c x, algebra_map R S c • x,
+                 smul_add := λ c x y, smul_add _ _ _,
+                 add_smul := λ c c' x, by simp only [ring_hom.map_add, add_smul],
+                 mul_smul := λ c c' x, by simp only [ring_hom.map_mul, mul_action.mul_smul],
+                 one_smul := λ x, by simp only [ring_hom.map_one, one_smul] }
+
+@[simp] lemma smul_mk {M : Type*} [add_comm_group M] [module R M] [module S M]
+  [is_scalar_tower R S M] (P : submodule S M) (c : R) (x : M) :
+  (c • submodule.quotient.mk x : P.quotient) = submodule.quotient.mk (c • x) :=
+show submodule.quotient.mk (algebra_map R S c • x) = submodule.quotient.mk (c • x),
+by rw algebra_map_smul
+
+instance {M : Type*} [add_comm_group M] [module R M] [module S M] [is_scalar_tower R S M]
+  (P : submodule S M) : is_scalar_tower R S P.quotient :=
+{ smul_assoc := λ x y z, show (x • y) • z = algebra_map R S x • y • z,
+                         by rw [← smul_assoc, algebra_map_smul] }
+
 /-- Restricting the scalars of a submodule doesn't change the quotient you get. -/
 @[simps] def submodule.restrict_scalars_quotient_equiv {M : Type*}
   [add_comm_group M] [module R M] [module S M] [is_scalar_tower R S M]
-  (P : submodule S M) : (P.restrict_scalars R).quotient ≃ P.quotient :=
+  (P : submodule S M) : (P.restrict_scalars R).quotient ≃ₗ[R] P.quotient :=
 { to_fun := quot.map id (λ x y, id),
   inv_fun := quot.map id (λ x y, id),
   left_inv := λ x, quot.induction_on x (λ x', rfl),
-  right_inv := λ x, quot.induction_on x (λ x', rfl) }
+  right_inv := λ x, quot.induction_on x (λ x', rfl),
+  map_add' := λ x y, quot.induction_on₂ x y (λ x' y', rfl),
+  map_smul' := λ c x, quot.induction_on x (λ x',
+    by { rw [submodule.quotient.quot_mk_eq_mk, smul_mk, ← algebra_map_smul S c x'],
+         exact submodule.quotient.mk_smul _ }) }
 
 @[simps] def submodule_span_quotient_equiv (s : set S) :
   (submodule.span S s).quotient ≃ₗ[S] (ideal.span s).quotient :=
@@ -704,22 +742,133 @@ linear_map.ext (λ x, by simp)
 
 .
 
-def quotient_equiv (a : ℤ) [fact (a ≠ 0)] : ideal.quotient (ideal.span ({a} : set ℤ)) ≃+* zmod a.nat_abs :=
-by library_search
+section
 
--- TODO: generalizable to PIDs R where all quotients are finite
-theorem ideal_norm_eq_card (b : basis ι ℤ S) (I : ideal S) [fintype I.quotient] :
-  ideal.norm ℤ I = fintype.card I.quotient :=
+open_locale classical
+
+/-- The norm of an ideal `I` in a number ring, defined as the cardinality of `I.quotient`,
+if `I.quotient` is finite, and `0` otherwise. -/
+noncomputable def card_norm (I : ideal S) : ℕ :=
+if h : nonempty (fintype I.quotient) then @fintype.card I.quotient h.some else 0
+
+@[simp] lemma card_norm_apply (I : ideal S) [h : fintype I.quotient] :
+  card_norm I = fintype.card I.quotient :=
+by convert dif_pos (nonempty.intro h) -- `convert` deals with the different `fintype` instances
+
+instance [infinite S] : infinite (⊥ : ideal S).quotient :=
+sorry
+
+@[simp] lemma card_norm_bot [infinite S] : card_norm (⊥ : ideal S) = 0 :=
+dif_neg (by simp; apply_instance)
+
+lemma ideal.quotient_top_equiv (S : Type*) [comm_ring S] : (⊤ : ideal S).quotient ≃+* fin 1 :=
+sorry
+
+instance ideal.quotient_top.fintype (S : Type*) [comm_ring S] :
+  fintype (⊤ : ideal S).quotient :=
+fintype.of_equiv _ (ideal.quotient_top_equiv S).to_equiv.symm
+
+@[simp] lemma card_norm_top : card_norm (⊤ : ideal S) = 1 :=
+calc card_norm ⊤ = fintype.card (ideal.quotient ⊤) : card_norm_apply _
+... = fintype.card (fin 1) : fintype.card_eq.mpr ⟨(ideal.quotient_top_equiv S).to_equiv⟩
+... = 1 : fintype.card_fin 1
+
+end
+
+/-- The quotient by the ideal generated by `a` is exactly `zmod a`. -/
+def quotient_equiv (a : ℤ) : ideal.quotient (ideal.span ({a} : set ℤ)) ≃+* zmod a.nat_abs :=
+sorry
+
+/-- We can write the quotient of an ideal over a PID as a product of quotients by principal ideals. -/
+noncomputable def ideal.quotient_equiv_pi_span [decidable_eq ι]
+  (I : ideal S) (b : basis ι R S) (hI : I ≠ ⊥) :
+  I.quotient ≃ₗ[R] Π i, (ideal.span ({I.smith_coeffs b hI i} : set R)).quotient :=
 begin
-  -- I is not `⊥` because `I.quotient` is finite but `S` is infinite
-  -- (since it is nontrivial and `b` provides an embedding of `ℤ`).
-  by_cases hI : I = ⊥,
-  { unfreezingI { subst hI }, have : infinite S := sorry, sorry },
-
   -- Choose `e : S ≃ₗ I` and a basis `b'` for `S` that turns the map
   -- `f := ((submodule.subtype I).restrict_scalars R).comp e` into a diagonal matrix:
   -- there is an `a : ι → ℤ` such that `f (b' i) = a i • b' i`.
-  obtain ⟨b', a, ab, ab_eq⟩ := I.smith_normal_form b hI,
+  let a := I.smith_coeffs b hI,
+  let b' := I.ring_basis b hI,
+  let ab := I.self_basis b hI,
+  have ab_eq := I.self_basis_def b hI,
+  let e : S ≃ₗ[R] I := b'.equiv ab (equiv.refl _),
+  let f : S →ₗ[R] S := (I.subtype.restrict_scalars R).comp e,
+  let f_apply : ∀ x, f x = b'.equiv ab (equiv.refl _) x := λ x, rfl,
+  have ha : ∀ i, f (b' i) = a i • b' i,
+  { intro i, rw [f_apply, b'.equiv_apply, equiv.refl_apply, ab_eq] },
+  have mem_I_iff : ∀ x, x ∈ I ↔ ∀ i, a i ∣ b'.repr x i,
+  { intro x, simp_rw [ab.mem_ideal_iff, ab_eq],
+    have : ∀ (c : ι → R) i, b'.repr (∑ (j : ι), c j • a j • b' j) i = a i * c i,
+    { intros c i,
+      simp only [← mul_action.mul_smul, b'.repr_sum_self, mul_comm] },
+    split,
+    { rintro ⟨c, rfl⟩ i, exact ⟨c i, this c i⟩ },
+    { rintros ha,
+      choose c hc using ha, exact ⟨c, b'.ext_elem (λ i, trans (hc i) (this c i).symm)⟩ } },
+
+  -- Now we map everything through the linear equiv `S ≃ₗ (ι → R)`,
+  -- which maps `I` to `I' := Π i, a i ℤ`.
+  let I' : submodule R (ι → R) := submodule.pi set.univ (λ i, ideal.span ({a i} : set R)),
+  have : submodule.map ↑b'.equiv_fun (I.restrict_scalars R) = I',
+  { ext x,
+    simp only [submodule.mem_map, submodule.mem_pi, ideal.mem_span_singleton, set.mem_univ,
+               submodule.restrict_scalars_mem, mem_I_iff, smul_eq_mul, forall_true_left,
+               linear_equiv.coe_coe, basis.equiv_fun_apply],
+    split,
+    { rintros ⟨y, hy, rfl⟩ i, exact hy i },
+    { rintros hdvd,
+      refine ⟨∑ i, x i • b' i, λ i, _, _⟩; rwa b'.repr_sum_self,
+      { exact hdvd i } } },
+  exact I.restrict_scalars_quotient_equiv.symm.trans
+    ((submodule.quotient.equiv (I.restrict_scalars R) I' b'.equiv_fun this).trans
+    (submodule.quotient_pi _))
+end
+
+-- TODO: do we want to strengthen the equiv (e.g. ring equiv?)
+/-- Ideal quotients over a free finite extension of `ℤ` are isomorphic to a direct product of `zmod`. -/
+noncomputable def ideal.quotient_equiv_pi_zmod [decidable_eq ι]
+  (I : ideal S) (b : basis ι ℤ S) (hI : I ≠ ⊥) :
+  I.quotient ≃ Π i, (zmod (I.smith_coeffs b hI i).nat_abs) :=
+begin
+  let a := I.smith_coeffs b hI,
+  let e := I.quotient_equiv_pi_span b hI,
+  let e' : (Π (i : ι), (ideal.span ({a i} : set ℤ)).quotient) ≃ Π (i : ι), zmod (a i).nat_abs :=
+    equiv.Pi_congr (equiv.refl _) (λ i, (quotient_equiv (a i)).to_equiv),
+  refine (_ : I.quotient ≃ₗ[ℤ] _).to_equiv.trans e',
+  -- TODO: probably from the `module _ I.quotient` instance assuming `is_scalar_tower`
+  haveI : unique (module ℤ I.quotient) := add_comm_group.int_module.unique,
+  convert e
+end
+
+/-- A nonzero ideal over a free finite extension of `ℤ` has a finite quotient. -/
+noncomputable def ideal.fintype_quotient_of_free_of_ne_bot [decidable_eq ι]
+  (I : ideal S) (b : basis ι ℤ S) (hI : I ≠ ⊥) :
+  fintype I.quotient :=
+begin
+  let a := I.smith_coeffs b hI,
+  let e := I.quotient_equiv_pi_zmod b hI,
+  haveI : ∀ i, fact (0 < (a i).nat_abs) := sorry,
+  exact fintype.of_equiv (Π i, zmod (a i).nat_abs) e.symm,
+end
+
+.
+
+variables [infinite S] -- TODO: should be provable from [integral_domain S] and `basis ι ℤ S`
+
+-- TODO: can we generalize this to other PIDs than ℤ?
+theorem ideal.card_norm_eq_norm (b : basis ι ℤ S) (I : ideal S) :
+  ideal.norm ℤ I = card_norm I :=
+begin
+  -- If `I` is the zero ideal, both sides are defined to equal 0.
+  by_cases hI : I = ⊥,
+  { rw [hI, ideal.norm_bot, card_norm_bot, int.coe_nat_zero] },
+
+  -- Otherwise, `I.quotient` is isomorphic to a product of `zmod`s, so it is a fintype.
+  letI := classical.dec_eq ι,
+  let a := I.smith_coeffs b hI,
+  let b' := I.ring_basis b hI,
+  let ab := I.self_basis b hI,
+  have ab_eq := I.self_basis_def b hI,
   let e : S ≃ₗ[ℤ] I := b'.equiv ab (equiv.refl _),
   let f : S →ₗ[ℤ] S := (I.subtype.restrict_scalars ℤ).comp e,
   let f_apply : ∀ x, f x = b'.equiv ab (equiv.refl _) x := λ x, rfl,
@@ -734,6 +883,7 @@ begin
     { rintro ⟨c, rfl⟩ i, exact ⟨c i, this c i⟩ },
     { rintros ha,
       choose c hc using ha, exact ⟨c, b'.ext_elem (λ i, trans (hc i) (this c i).symm)⟩ } },
+  letI : fintype I.quotient := ideal.fintype_quotient_of_free_of_ne_bot I b hI,
 
   -- Note that `ideal.norm ℤ I = det f` is equal to `∏ i, a i`,
   letI := classical.dec_eq ι,
@@ -743,7 +893,8 @@ begin
   ... = normalize (matrix.diagonal a).det : _
   ... = normalize (∏ i, a i) : by rw det_diagonal
   ... = ∏ i, normalize (a i) : normalize_prod a finset.univ
-  ... = fintype.card I.quotient : _,
+  ... = fintype.card I.quotient : _
+  ... = card_norm I : by rw card_norm_apply I,
   -- since `linear_map.to_matrix b' b' f` is the diagonal matrix with `a` along the diagonal.
   { congr, ext i j,
     rw [to_matrix_apply, ha, linear_equiv.map_smul, basis.repr_self, finsupp.smul_single,
@@ -753,37 +904,60 @@ begin
     { rw [diagonal_apply_ne h, finsupp.single_eq_of_ne (ne.symm h)] } },
 
   -- Now we map everything through the linear equiv `S ≃ₗ (ι → ℤ)`,
-  -- which maps `I` to `I' := Π i, a i ℤ`.
-  let I' : submodule ℤ (ι → ℤ) := submodule.pi set.univ (λ i, submodule.span ℤ ({a i} : set ℤ)),
-  have : submodule.map ↑b'.equiv_fun (I.restrict_scalars ℤ) = I',
-  { ext x,
-    simp only [submodule.mem_map, submodule.mem_pi, submodule.mem_span_singleton, set.mem_univ,
-               submodule.restrict_scalars_mem, mem_I_iff, smul_eq_mul, forall_true_left,
-               linear_equiv.coe_coe, basis.equiv_fun_apply],
-    split,
-    { rintros ⟨y, hy, rfl⟩ i,
-      convert hy i, ext c, rw [mul_comm, eq_comm] },
-    { rintros hdvd,
-      refine ⟨∑ i, x i • b' i, λ i, _, _⟩; rw b'.repr_sum_self,
-      { obtain ⟨c, xi_eq⟩ := hdvd i, use c, rw [mul_comm, xi_eq] } } },
-  let map_I : I.quotient ≃ I'.quotient := -- (This is actually a linear equiv)
-    I.restrict_scalars_quotient_equiv.symm.trans
-    (submodule.quotient.equiv (I.restrict_scalars ℤ) I' b'.equiv_fun this).to_equiv,
-  letI : fintype I'.quotient := fintype.of_equiv I.quotient map_I,
-  rw ← fintype.of_equiv_card map_I,
-
-  -- We get the equiv `Π i, (ℤ / a i ℤ) ≃ₗ (Π i, ℤ) / (Π i, a i ℤ) ≃ₗ S / I `,
-  -- the cardinality of the LHS is `∏ i, a i = det f = ideal.norm ℤ I`
-  -- and the cardinality of the RHS is what we want on the right, QED.
-  haveI a_ne : ∀ i, fact (a i ≠ 0) := sorry,
-  haveI a_pos : ∀ i, fact (0 < (a i).nat_abs) := λ i, ⟨int.nat_abs_pos_of_ne_zero (fact.out (a i ≠ 0))⟩,
-  let I'_quot_equiv : I'.quotient ≃ Π i, zmod (a i).nat_abs :=
-  (submodule.quotient_pi _).to_equiv.trans
-    (equiv.Pi_congr (equiv.refl ι) (λ i,
-      (submodule_span_quotient_equiv {a i}).to_equiv.trans
-      (quotient_equiv (a i)).to_equiv : Π i, (submodule.span ℤ {a i}).quotient ≃ zmod (a i).nat_abs)),
-  simp_rw [fintype.card_eq.mpr ⟨I'_quot_equiv⟩, fintype.card_pi, zmod.card],
+  -- which maps `I.quotient` to `Π i, zmod (a i).nat_abs`.
+  haveI : ∀ i, fact (0 < (a i).nat_abs) := sorry,
+  simp_rw [fintype.card_eq.mpr ⟨ideal.quotient_equiv_pi_zmod I b hI⟩, fintype.card_pi, zmod.card],
   sorry -- TODO: `normalize = (↑) ∘ nat_abs`
 end
+
+.
+
+/-- Chinese remainder theorem, specialized to two ideals. -/
+def ideal.quotient_mul_equiv_quotient_prod (I J : ideal S) (coprime : I ⊔ J = ⊤) :
+  (I * J).quotient ≃+* I.quotient × J.quotient :=
+let f : fin 2 → ideal S := ![I, J] in
+have hf : ∀ (i j : fin 2), i ≠ j → f i ⊔ f j = ⊤,
+{ intros i j h, fin_cases i; fin_cases j; sorry },
+sorry
+
+/-- Multiplicity of the ideal norm, for coprime ideals.
+
+This is essentially just a repackaging of the Chinese Remainder Theorem.
+-/
+lemma card_norm_mul_of_coprime (b : basis ι ℤ S) (I J : ideal S) (coprime : I ⊔ J = ⊤) :
+  card_norm (I * J) = card_norm I * card_norm J :=
+begin
+  by_cases hI : I = ⊥,
+  { rw [hI, submodule.bot_mul, card_norm_bot, zero_mul] },
+  by_cases hJ : J = ⊥,
+  { rw [hJ, submodule.mul_bot, card_norm_bot, mul_zero] },
+  have hIJ : I * J ≠ ⊥ := mt ideal.mul_eq_bot.mp (not_or hI hJ),
+
+  letI := classical.dec_eq ι,
+  letI := I.fintype_quotient_of_free_of_ne_bot b hI,
+  letI := J.fintype_quotient_of_free_of_ne_bot b hJ,
+  letI := (I * J).fintype_quotient_of_free_of_ne_bot b hIJ,
+
+  rw [card_norm_apply, card_norm_apply, card_norm_apply,
+      fintype.card_eq.mpr ⟨(ideal.quotient_mul_equiv_quotient_prod I J coprime).to_equiv⟩,
+      fintype.card_prod]
+end
+
+/-- Multiplicity of the ideal norm, for powers of prime ideals. -/
+lemma card_norm_pow_of_prime (b : basis ι ℤ S) (P : ideal S) [P_prime : P.is_prime]
+  {i : ℕ} : card_norm (P ^ i) = card_norm P ^ i :=
+_
+
+instance : comm_cancel_monoid_with_zero (ideal S) :=
+{ .. (infer_instance : comm_monoid_with_zero (ideal S)) }
+
+lemma ideal.is_unit_iff {I : ideal S} : is_unit I ↔ I = ⊤ := sorry
+
+/-- Multiplicity of the ideal norm in number rings. -/
+theorem card_norm_mul (b : basis ι ℤ S) [unique_factorization_monoid (ideal S)] (I J : ideal S) :
+  card_norm (I * J) = card_norm I * card_norm J :=
+unique_factorization_monoid.induction_on_prime I (by simp)
+  (λ I hI, by simp [ideal.is_unit_iff.mp hI, ideal.top_mul])
+  (λ I P (hI : I ≠ ⊥) hP ih, _)
 
 end int
