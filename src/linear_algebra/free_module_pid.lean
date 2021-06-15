@@ -88,7 +88,7 @@ begin
   exact (submodule.eq_bot_iff _).mp (hϕ ((finsupp.lapply i).comp b.repr) bot_le) _ ⟨x, hx, rfl⟩
 end
 
-lemma eq_bot_of_generator_maximal_range_eq_zero  {N O : submodule R M} (b : basis ι R O)
+lemma eq_bot_of_generator_maximal_range_eq_zero {N O : submodule R M} (b : basis ι R O)
   (hNO : N ≤ O)
   {ϕ : O →ₗ[R] R} (hϕ : ∀ (ψ : O →ₗ[R] R), (ϕ.comp $ of_le hNO).range ≤ (ψ.comp $ of_le hNO).range →
     (ψ.comp $ of_le hNO).range = (ϕ.comp (of_le hNO)).range)
@@ -503,6 +503,43 @@ end
   fin.cast_le h i.succ = (fin.cast_le (nat.succ_le_succ_iff.mp h) i).succ :=
 by simp [fin.eq_iff_veq]
 
+lemma generator_maximal_range_dvd {N O : submodule R M} (hNO : N ≤ O)
+  {ϕ : O →ₗ[R] R} (hϕ : ∀ (ψ : O →ₗ[R] R), (ϕ.comp $ of_le hNO).range ≤ (ψ.comp $ of_le hNO).range →
+    (ψ.comp $ of_le hNO).range = (ϕ.comp (of_le hNO)).range)
+  [(ϕ.comp (of_le hNO)).range.is_principal]
+  (y : M) (yN : y ∈ N) (ϕy_eq : ϕ ⟨y, hNO yN⟩ = generator (ϕ.comp (of_le hNO)).range)
+  (ψ : O →ₗ[R] R) : generator (ϕ.comp (of_le hNO)).range ∣ ψ ⟨y, hNO yN⟩ :=
+begin
+  let a : R := generator (ϕ.comp (of_le hNO)).range,
+  let d : R := is_principal.generator (submodule.span R {a, ψ ⟨y, hNO yN⟩}),
+  have d_dvd_left : d ∣ a := (mem_iff_generator_dvd _).mp
+    (subset_span (mem_insert _ _)),
+  have d_dvd_right : d ∣ ψ ⟨y, hNO yN⟩ := (mem_iff_generator_dvd _).mp
+    (subset_span (mem_insert_of_mem _ (mem_singleton _))),
+  refine dvd_trans _ d_dvd_right,
+  rw [dvd_generator_iff, ideal.span,
+      ← span_singleton_generator (submodule.span R {a, ψ ⟨y, hNO yN⟩})],
+  obtain ⟨r₁, r₂, d_eq⟩ : ∃ r₁ r₂ : R, d = r₁ * a + r₂ * ψ ⟨y, hNO yN⟩,
+  { obtain ⟨r₁, r₂', hr₂', hr₁⟩ := mem_span_insert.mp (is_principal.generator_mem
+      (submodule.span R {a, ψ ⟨y, hNO yN⟩})),
+    obtain ⟨r₂, rfl⟩ := mem_span_singleton.mp hr₂',
+    exact ⟨r₁, r₂, hr₁⟩ },
+  let ψ' : O →ₗ[R] R := r₁ • ϕ + r₂ • ψ,
+  have : span R {d} ≤ (ψ'.comp (of_le hNO)).range,
+  { rw [span_le, singleton_subset_iff, set_like.mem_coe, linear_map.mem_range],
+    refine ⟨⟨y, yN⟩, _⟩,
+    change r₁ * ϕ ⟨y, hNO yN⟩ + r₂ * ψ ⟨y, hNO yN⟩ = d,
+    rw [d_eq, ϕy_eq] },
+  -- TODO: should be golfable
+  refine le_antisymm _ (ideal.span_singleton_le_span_singleton.mpr d_dvd_left),
+  refine le_trans this (le_of_eq _),
+  rw span_singleton_generator,
+  refine hϕ ψ' (le_trans _ this),
+  rw [← span_singleton_generator (ϕ.comp (of_le hNO)).range],
+  exact ideal.span_singleton_le_span_singleton.mpr d_dvd_left,
+  { exact subset_span (mem_insert _ _) }
+end
+
 /-- If `M` is finite free over a PID `R`, then any submodule `N` is free
 and we can find a basis for `M` and `N` such that the inclusion map is a diagonal matrix.
 
@@ -563,35 +600,8 @@ begin
   have ϕy_eq : ϕ ⟨y, N_le_M yN⟩ = a := ϕy_eq,
   have ϕy_ne_zero : ϕ ⟨y, N_le_M yN⟩ ≠ 0 := λ h, a_zero (ϕy_eq.symm.trans h),
   -- Write `y` as `a • y'` for some `y'`.
-  have hdvd : ∀ i, a ∣ b'M.2.coord i ⟨y, N_le_M yN⟩,
-  { intro i,
-    let d : R := is_principal.generator (submodule.span R {a, b'M.2.coord i ⟨y, N_le_M yN⟩}),
-    have d_dvd_left : d ∣ a := (mem_iff_generator_dvd _).mp
-      (subset_span (mem_insert _ _)),
-    have d_dvd_right : d ∣ b'M.2.coord i ⟨y, N_le_M yN⟩ := (mem_iff_generator_dvd _).mp
-      (subset_span (mem_insert_of_mem _ (mem_singleton _))),
-    refine dvd_trans _ d_dvd_right,
-    rw [dvd_generator_iff, ideal.span,
-        ← span_singleton_generator (submodule.span R {a, b'M.2.coord i ⟨y, N_le_M yN⟩})],
-    obtain ⟨r₁, r₂, d_eq⟩ : ∃ r₁ r₂ : R, d = r₁ * a + r₂ * b'M.2.coord i ⟨y, N_le_M yN⟩,
-    { obtain ⟨r₁, r₂', hr₂', hr₁⟩ := mem_span_insert.mp (is_principal.generator_mem
-        (submodule.span R {a, b'M.2.coord i _})),
-      obtain ⟨r₂, rfl⟩ := mem_span_singleton.mp hr₂',
-      exact ⟨r₁, r₂, hr₁⟩ },
-    let ψ : M →ₗ[R] R := r₁ • ϕ + r₂ • b'M.2.coord i,
-    have : span R {d} ≤ (ψ.comp inc).range,
-    { rw [span_le, singleton_subset_iff, set_like.mem_coe, linear_map.mem_range],
-      refine ⟨⟨y, yN⟩, _⟩,
-      change r₁ * ϕ ⟨y, N_le_M yN⟩ + r₂ * b'M.2.coord i ⟨y, N_le_M yN⟩ = d,
-      rw [d_eq, ϕy_eq] },
-    -- TODO: should be golfable
-    refine le_antisymm _ (ideal.span_singleton_le_span_singleton.mpr d_dvd_left),
-    refine le_trans this (le_of_eq _),
-    rw span_singleton_generator,
-    refine ϕ_max ψ (le_trans _ this),
-    rw [← span_singleton_generator (ϕ.comp inc).range],
-    exact ideal.span_singleton_le_span_singleton.mpr d_dvd_left,
-    { exact subset_span (mem_insert _ _) } },
+  have hdvd : ∀ i, a ∣ b'M.2.coord i ⟨y, N_le_M yN⟩ :=
+    λ i, generator_maximal_range_dvd N_le_M ϕ_max y yN ϕy_eq (b'M.2.coord i),
   choose c hc using hdvd,
   let y' : O := ∑ i, c i • b'M.2 i,
   have y'M : y' ∈ M := M.sum_mem (λ i _, M.smul_mem (c i) (b'M.2 i).2),
