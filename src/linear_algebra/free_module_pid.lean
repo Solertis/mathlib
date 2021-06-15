@@ -263,7 +263,46 @@ def submodule.induction_on_rank [fintype ι] (b : basis ι R M) (P : submodule R
 submodule.induction_on_rank_aux b P ih (fintype.card ι) N (λ s hs hli,
   by simpa using b.card_le_card_of_linear_independent hli)
 
-open submodule.is_principal
+/-- Let `b` be a basis for a submodule `N` of `M`. If `y : M` is linear independent of `N`
+and `y` and `N` together span the whole of `M`, then there is a basis for `M`
+whose basis vectors are given by `fin.cons y b`. -/
+noncomputable def basis.mk_fin_cons {n : ℕ} {N : submodule R M} (y : M) (b : basis (fin n) R N)
+  (hli : ∀ (c : R) (x ∈ N), c • y + x = 0 → c = 0)
+  (hsp : ∀ (z : M), ∃ (c : R) (x ∈ N), z = c • y + x) :
+  basis (fin (n + 1)) R M :=
+have span_b : submodule.span R (set.range (N.subtype ∘ b)) = N,
+{ rw [set.range_comp, submodule.span_image, b.span_eq, submodule.map_subtype_top] },
+@basis.mk _ _ _ (fin.cons y (N.subtype ∘ b) : fin (n + 1) → M) _ _ _
+  ((b.linear_independent.map' N.subtype (submodule.ker_subtype _)) .fin_cons' _ _ $
+    by { rintros c ⟨x, hx⟩ hc, rw span_b at hx, exact hli c x hx hc })
+  (eq_top_iff.mpr (λ x _,
+    by { rw [fin.range_cons, submodule.mem_span_insert, span_b], exact hsp x }))
+
+@[simp] lemma basis.coe_mk_fin_cons {n : ℕ} {N : submodule R M} (y : M) (b : basis (fin n) R N)
+  (hli : ∀ (c : R) (x ∈ N), c • y + x = 0 → c = 0)
+  (hsp : ∀ (z : M), ∃ (c : R) (x ∈ N), z = c • y + x) :
+  (basis.mk_fin_cons y b hli hsp : fin (n + 1) → M) = fin.cons y (coe ∘ b) :=
+basis.coe_mk _ _
+
+/-- Let `b` be a basis for a submodule `N ≤ O`. If `y ∈ O` is linear independent of `N`
+and `y` and `N` together span the whole of `O`, then there is a basis for `O`
+whose basis vectors are given by `fin.cons y b`. -/
+noncomputable def basis.mk_fin_cons_of_le {n : ℕ} {N O : submodule R M}
+  (y : M) (yO : y ∈ O) (b : basis (fin n) R N) (hNO : N ≤ O)
+  (hli : ∀ (c : R) (x ∈ N), c • y + x = 0 → c = 0)
+  (hsp : ∀ (z ∈ O), ∃ (c : R) (x ∈ N), z = c • y + x) :
+  basis (fin (n + 1)) R O :=
+basis.mk_fin_cons ⟨y, yO⟩ (b.map (submodule.comap_subtype_equiv_of_le hNO).symm)
+  (λ c x hc hx, hli c x (submodule.mem_comap.mp hc) (congr_arg coe hx))
+  (λ z, let ⟨c, x, xN, hz⟩ := hsp z z.2 in ⟨c, ⟨x, hNO xN⟩, xN, subtype.ext hz⟩)
+
+@[simp] lemma basis.coe_mk_fin_cons_of_le {n : ℕ} {N O : submodule R M}
+  (y : M) (yO : y ∈ O) (b : basis (fin n) R N) (hNO : N ≤ O)
+  (hli : ∀ (c : R) (x ∈ N), c • y + x = 0 → c = 0)
+  (hsp : ∀ (z ∈ O), ∃ (c : R) (x ∈ N), z = c • y + x) :
+  (basis.mk_fin_cons_of_le y yO b hNO hli hsp : fin (n + 1) → O) =
+    fin.cons ⟨y, yO⟩ (submodule.of_le hNO ∘ b) :=
+basis.coe_mk_fin_cons _ _ _ _
 
 end integral_domain
 
@@ -303,8 +342,7 @@ begin
   -- If `a` is zero, then the submodule is trivial. So let's assume `a ≠ 0`, `N ≠ ⊥`
   by_cases N_bot : N = ⊥,
   { rw N_bot,
-    refine ⟨0, basis.empty _ _⟩,
-    rintro ⟨i, ⟨⟩⟩ },
+    exact ⟨0, basis.empty _⟩ },
   by_cases a_zero : generator (N.map ϕ) = 0,
   { have := eq_bot_of_generator_maximal_map_eq_zero b ϕ_max a_zero,
     contradiction },
@@ -328,29 +366,22 @@ begin
   use nN'.succ,
 
   -- Extend `bN'` with `y`, we'll show it's linear independent and spans `N`.
-  let bN'y : fin (nN'.succ) → N := fin.cons ⟨y, y_mem⟩ (submodule.of_le N'_le_N ∘ bN'),
-  refine @basis.mk _ _ _ bN'y _ _ _ _ _,
-  { apply (bN'.linear_independent
-          .map' (submodule.of_le N'_le_N) (submodule.ker_of_le _ _ _))
-          .fin_cons' _ _ _,
-    intros c z hc,
-    apply y_ortho_N' c z (submodule.mem_inf.mpr ⟨_, z.1.2⟩) (congr_arg coe hc),
-    have : submodule.span R (set.range (submodule.of_le N'_le_N ∘ bN')) ≤ (ϕ.dom_restrict N).ker,
-    { rw submodule.span_le,
-      rintros _ ⟨i, rfl⟩,
-      exact N'_le_ker (bN' i).2 },
-    exact this z.2 },
-  { rw eq_top_iff,
-    rintro x -,
-    rw [fin.range_cons, set.range_comp, submodule.mem_span_insert, submodule.span_image],
-    obtain ⟨b, hb⟩ : _ ∣ ϕ x := generator_map_dvd_of_mem ϕ x.2,
-    refine ⟨b, x - b • ⟨_, y_mem⟩, _, _⟩,
-    { rw submodule.mem_map,
-      refine ⟨⟨x - b • _, _⟩, bN'.mem_span _, rfl⟩,
-      refine submodule.mem_inf.mpr ⟨linear_map.mem_ker.mpr _, N.sub_mem x.2 (N.smul_mem _ y_mem)⟩,
-      dsimp only,
-      rw [linear_map.map_sub, linear_map.map_smul, hb, ϕy_eq, smul_eq_mul, mul_comm, sub_self] },
-    { ext, simp only [ϕy_eq, add_sub_cancel'_right] } },
+  refine basis.mk_fin_cons_of_le y y_mem bN' N'_le_N y_ortho_N' _,
+  intros x hx,
+  obtain ⟨b, hb⟩ : _ ∣ ϕ x := generator_map_dvd_of_mem ϕ hx,
+  refine ⟨b, x - b • y, _, (add_sub_cancel'_right _ _).symm⟩,
+  refine submodule.mem_inf.mpr ⟨linear_map.mem_ker.mpr _, N.sub_mem hx (N.smul_mem _ y_mem)⟩,
+  rw [linear_map.map_sub, linear_map.map_smul, hb, ϕy_eq, smul_eq_mul, mul_comm, sub_self],
+end
+
+lemma submodule.basis_of_pid_bot {ι : Type*} [fintype ι] (b : basis ι R M) :
+  submodule.basis_of_pid b ⊥ = ⟨0, basis.empty _⟩ :=
+begin
+  obtain ⟨n, b'⟩ := submodule.basis_of_pid b ⊥,
+  let e : fin n ≃ fin 0 := b'.index_equiv (basis.empty _ : basis (fin 0) R (⊥ : submodule R M)),
+  have : n = 0 := by simpa using fintype.card_eq.mpr ⟨e⟩,
+  subst this,
+  exact sigma.eq rfl (basis.eq_of_apply_eq $ fin_zero_elim)
 end
 
 /-- A submodule inside a free `R`-submodule of finite rank is also a free `R`-module of finite rank,
