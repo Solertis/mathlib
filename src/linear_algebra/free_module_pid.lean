@@ -268,7 +268,7 @@ and `y` and `N` together span the whole of `M`, then there is a basis for `M`
 whose basis vectors are given by `fin.cons y b`. -/
 noncomputable def basis.mk_fin_cons {n : ℕ} {N : submodule R M} (y : M) (b : basis (fin n) R N)
   (hli : ∀ (c : R) (x ∈ N), c • y + x = 0 → c = 0)
-  (hsp : ∀ (z : M), ∃ (c : R) (x ∈ N), z = c • y + x) :
+  (hsp : ∀ (z : M), ∃ (c : R), z + c • y ∈ N) :
   basis (fin (n + 1)) R M :=
 have span_b : submodule.span R (set.range (N.subtype ∘ b)) = N,
 { rw [set.range_comp, submodule.span_image, b.span_eq, submodule.map_subtype_top] },
@@ -276,11 +276,11 @@ have span_b : submodule.span R (set.range (N.subtype ∘ b)) = N,
   ((b.linear_independent.map' N.subtype (submodule.ker_subtype _)) .fin_cons' _ _ $
     by { rintros c ⟨x, hx⟩ hc, rw span_b at hx, exact hli c x hx hc })
   (eq_top_iff.mpr (λ x _,
-    by { rw [fin.range_cons, submodule.mem_span_insert, span_b], exact hsp x }))
+    by { rw [fin.range_cons, submodule.mem_span_insert', span_b], exact hsp x }))
 
 @[simp] lemma basis.coe_mk_fin_cons {n : ℕ} {N : submodule R M} (y : M) (b : basis (fin n) R N)
   (hli : ∀ (c : R) (x ∈ N), c • y + x = 0 → c = 0)
-  (hsp : ∀ (z : M), ∃ (c : R) (x ∈ N), z = c • y + x) :
+  (hsp : ∀ (z : M), ∃ (c : R), z + c • y ∈ N) :
   (basis.mk_fin_cons y b hli hsp : fin (n + 1) → M) = fin.cons y (coe ∘ b) :=
 basis.coe_mk _ _
 
@@ -290,16 +290,16 @@ whose basis vectors are given by `fin.cons y b`. -/
 noncomputable def basis.mk_fin_cons_of_le {n : ℕ} {N O : submodule R M}
   (y : M) (yO : y ∈ O) (b : basis (fin n) R N) (hNO : N ≤ O)
   (hli : ∀ (c : R) (x ∈ N), c • y + x = 0 → c = 0)
-  (hsp : ∀ (z ∈ O), ∃ (c : R) (x ∈ N), z = c • y + x) :
+  (hsp : ∀ (z ∈ O), ∃ (c : R), z + c • y ∈ N) :
   basis (fin (n + 1)) R O :=
 basis.mk_fin_cons ⟨y, yO⟩ (b.map (submodule.comap_subtype_equiv_of_le hNO).symm)
   (λ c x hc hx, hli c x (submodule.mem_comap.mp hc) (congr_arg coe hx))
-  (λ z, let ⟨c, x, xN, hz⟩ := hsp z z.2 in ⟨c, ⟨x, hNO xN⟩, xN, subtype.ext hz⟩)
+  (λ z, hsp z z.2)
 
 @[simp] lemma basis.coe_mk_fin_cons_of_le {n : ℕ} {N O : submodule R M}
   (y : M) (yO : y ∈ O) (b : basis (fin n) R N) (hNO : N ≤ O)
   (hli : ∀ (c : R) (x ∈ N), c • y + x = 0 → c = 0)
-  (hsp : ∀ (z ∈ O), ∃ (c : R) (x ∈ N), z = c • y + x) :
+  (hsp : ∀ (z ∈ O), ∃ (c : R), z + c • y ∈ N) :
   (basis.mk_fin_cons_of_le y yO b hNO hli hsp : fin (n + 1) → O) =
     fin.cons ⟨y, yO⟩ (submodule.of_le hNO ∘ b) :=
 basis.coe_mk_fin_cons _ _ _ _
@@ -369,9 +369,10 @@ begin
   refine basis.mk_fin_cons_of_le y y_mem bN' N'_le_N y_ortho_N' _,
   intros x hx,
   obtain ⟨b, hb⟩ : _ ∣ ϕ x := generator_map_dvd_of_mem ϕ hx,
-  refine ⟨b, x - b • y, _, (add_sub_cancel'_right _ _).symm⟩,
-  refine submodule.mem_inf.mpr ⟨linear_map.mem_ker.mpr _, N.sub_mem hx (N.smul_mem _ y_mem)⟩,
-  rw [linear_map.map_sub, linear_map.map_smul, hb, ϕy_eq, smul_eq_mul, mul_comm, sub_self],
+  refine ⟨-b, _⟩,
+  refine submodule.mem_inf.mpr ⟨linear_map.mem_ker.mpr _, N.add_mem hx (N.smul_mem _ y_mem)⟩,
+  rw [linear_map.map_add, linear_map.map_smul, hb, ϕy_eq, smul_eq_mul, mul_comm,
+      ← neg_mul_eq_neg_mul, add_neg_eq_zero],
 end
 
 lemma submodule.basis_of_pid_bot {ι : Type*} [fintype ι] (b : basis ι R M) :
