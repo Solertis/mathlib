@@ -595,30 +595,41 @@ begin
   choose c hc using hdvd,
   let y' : O := ∑ i, c i • b'M.2 i,
   have y'M : y' ∈ M := M.sum_mem (λ i _, M.smul_mem (c i) (b'M.2 i).2),
-  have mk_y' : (⟨y', y'M⟩ : M) = ∑ i, c i • b'M.2 i := sorry,
+  have mk_y' : (⟨y', y'M⟩ : M) = ∑ i, c i • b'M.2 i :=
+    subtype.ext (show y' = M.subtype _,
+      by { simp only [linear_map.map_sum, linear_map.map_smul], refl }),
   have a_smul_y' : a • y' = y,
   { refine congr_arg coe (show (a • ⟨y', y'M⟩ : M) = ⟨y, N_le_M yN⟩, from _),
     rw [← b'M.2.sum_repr ⟨y, N_le_M yN⟩, mk_y', finset.smul_sum],
     refine finset.sum_congr rfl (λ i _, _),
     rw [← mul_smul, ← hc], refl },
 
-  have ϕy'_eq : ϕ ⟨y', y'M⟩ = 1 := sorry,
-  have ϕy'_ne_zero : ϕ ⟨y', y'M⟩ ≠ 0 := mt sorry ϕy_ne_zero,
+  have ϕy'_eq : ϕ ⟨y', y'M⟩ = 1 := mul_left_cancel' a_zero
+  (calc a • ϕ ⟨y', y'M⟩ = ϕ ⟨a • y', _⟩ : (ϕ.map_smul a ⟨y', y'M⟩).symm
+                    ... = ϕ ⟨y, N_le_M yN⟩ : by simp only [a_smul_y']
+                    ... = a : ϕy_eq
+                    ... = a * 1 : (mul_one a).symm),
+  have ϕy'_ne_zero : ϕ ⟨y', y'M⟩ ≠ 0 := by simpa only [ϕy'_eq] using one_ne_zero,
 
   -- `M' := ker (ϕ : M → R)` is smaller than `M` and `N' := ker (ϕ : N → R)` is smaller than `N`,
   -- so we can apply the induction hypothesis.
   let M' : submodule R O := ϕ.ker.map M.subtype,
   let N' : submodule R O := (ϕ.comp inc).ker.map N.subtype,
-  have M'_le_M : M' ≤ M := map_subtype_le _ _,
-  have N'_le_M' : N' ≤ M' := λ x hx, sorry,
-  have N'_le_N : N' ≤ N := λ x hx, sorry,
+  have M'_le_M : M' ≤ M := M.map_subtype_le ϕ.ker,
+  have N'_le_M' : N' ≤ M',
+  { intros x hx,
+    simp only [mem_map, linear_map.mem_ker] at hx ⊢,
+    obtain ⟨⟨x, xN⟩, hx, rfl⟩ := hx,
+    exact ⟨⟨x, N_le_M xN⟩, hx, rfl⟩ },
+  have N'_le_N : N' ≤ N := N.map_subtype_le (ϕ.comp inc).ker,
   -- Note that `y'` is orthogonal to `M'`.
   have y'_ortho_M' : ∀ (c : R) z ∈ M', c • y' + z = 0 → c = 0,
   { intros c x xM' hc,
     obtain ⟨⟨x, xM⟩, hx', rfl⟩ := submodule.mem_map.mp xM',
     rw linear_map.mem_ker at hx',
     have hc' : (c • ⟨y', y'M⟩ + ⟨x, xM⟩ : M) = 0 := subtype.coe_injective hc,
-    simpa [ϕy'_ne_zero, hx'] using congr_arg ϕ hc' },
+    simpa only [linear_map.map_add, linear_map.map_zero, linear_map.map_smul, smul_eq_mul, add_zero,
+                mul_eq_zero, ϕy'_ne_zero, hx', or_false] using congr_arg ϕ hc' },
   obtain ⟨m', n', hm'n', bM', bN', a', h'⟩ := ih M' M'_le_M y' y'M y'_ortho_M' N' N'_le_M',
   refine ⟨m' + 1, n' + 1, nat.succ_le_succ hm'n', _, _, fin.cons a a', _⟩,
 
