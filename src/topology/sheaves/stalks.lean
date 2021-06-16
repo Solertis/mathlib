@@ -134,25 +134,17 @@ lemma stalk_hom_ext (F : X.presheaf C) {x} {Y : C} {f₁ f₂ : F.stalk x ⟶ Y}
 colimit.hom_ext $ λ U, by { op_induction U, cases U with U hxU, exact ih U hxU }
 
 /-- If two sections agree on all stalks, they must be equal -/
-lemma section_ext (F : sheaf (Type v) X) (U : opens X) (s t : F.presheaf.obj (op U)) :
-  (∀ x : U, F.presheaf.germ x s = F.presheaf.germ x t) → s = t :=
+lemma section_ext (F : sheaf (Type v) X) (U : opens X) (s t : F.presheaf.obj (op U))
+  (h : ∀ x : U, F.presheaf.germ x s = F.presheaf.germ x t) : s = t :=
 begin
-  intro h,
   -- We use `germ_eq` and the axiom of choice, to pick for every point `x` a neighbourhood
-  -- `V`, such that the restrictions of `s` and `t` to `V` coincide. Since a restriction
-  -- map `V ⟶ U` is *data* (lives in `Type`, not `Prop`), we encode all of this as a dependent
-  -- pair (sigma type)
-  let V : Π (x : U), Σ (V : open_nhds x.1),
-      { iVU : V.1 ⟶ U // F.presheaf.map iVU.op s = F.presheaf.map iVU.op t } := λ x, by {
-    choose V m iVU₀ iVU₁ heq using (F.presheaf.germ_eq x.1 x.2 x.2 s t (h x)),
-    refine ⟨⟨V,m⟩,iVU₀,_⟩,
-    convert heq,
-  },
-  refine F.eq_of_locally_eq' (λ x, (V x).1.1) U (λ x, (V x).2.1) _ s t (λ x, (V x).2.2),
+  -- `V`, such that the restrictions of `s` and `t` to `V` coincide.
+  choose V m i₁ i₂ heq using λ x : U, F.presheaf.germ_eq x.1 x.2 x.2 s t (h x),
+  refine F.eq_of_locally_eq' V U i₁ _ s t (λ x, by rw [heq, subsingleton.elim (i₁ x) (i₂ x)]),
   -- Here, it remains to show that the choosen neighborhoods really define a cover of `U`
   intros x hxU,
   rw [subtype.val_eq_coe, opens.mem_coe, opens.mem_supr],
-  exact ⟨⟨x,hxU⟩,(V ⟨x,hxU⟩).1.2⟩,
+  exact ⟨⟨x, hxU⟩, m ⟨x, hxU⟩⟩,
 end
 
 @[simp, reassoc] lemma stalk_functor_map_germ {F G : X.presheaf C} (U : opens X) (x : U)
@@ -188,13 +180,8 @@ is an epi, but this fact is not yet formalized.
 -/
 lemma app_injective_of_stalk_functor_map_injective {F : sheaf (Type v) X} {G : presheaf (Type v) X}
   (f : F.presheaf ⟶ G) (h : ∀ x : X, injective ((stalk_functor (Type v) x).map f)) (U : opens X) :
-  injective (f.app (op U)) := λ s t hst,
-begin
-  apply section_ext,
-  intro x,
-  apply h x.1,
-  simp only [stalk_functor_map_germ_apply, hst],
-end
+  injective (f.app (op U)) :=
+λ s t hst, section_ext F U _ _ $ λ x, h x.1 (by simp_rw [stalk_functor_map_germ_apply, hst])
 
 lemma app_injective_iff_stalk_functor_map_injective {F : sheaf (Type v) X}
   {G : presheaf (Type v) X} (f : F.presheaf ⟶ G) :
@@ -202,21 +189,22 @@ lemma app_injective_iff_stalk_functor_map_injective {F : sheaf (Type v) X}
   (∀ U : opens X, injective (f.app (op U))) :=
 ⟨app_injective_of_stalk_functor_map_injective f, stalk_functor_map_injective_of_app_injective f⟩
 
-lemma app_bijective_of_stalk_functor_map_bijective {F G : sheaf (Type v) X} (f : F ⟶ G)
+lemma app_surjective_of_stalk_functor_map_bijective {F G : sheaf (Type v) X} (f : F ⟶ G)
   (h : ∀ x : X, bijective ((stalk_functor (Type v) x).map f)) (U : opens X) :
-  bijective (f.app (op U)) :=
+  surjective (f.app (op U)) :=
 begin
-  -- We already know that `f.app (op U)` is injective. We save that fact here as we will
-  -- need it again later.
-  have h_inj := app_injective_of_stalk_functor_map_injective f (λ x, (h x).1),
-  refine ⟨h_inj U, (λ t,_)⟩,
+  intro t,
   -- For surjectivity, we are given an arbitrary section `t` and need to find a preimage for it.
   -- First, we show that we can find preimages *locally*. That is, for each `x : U` we construct
   -- neighborhood `V ≤ U` and a section `s : F.obj (op V))` such that `f.app (op V) s` and `t`
   -- agree on `V`.
-  have exists_local_preim : ∀ x : U, ∃ (V : open_nhds x.1) (iVU : V.1 ⟶ U)
-    (s : F.presheaf.obj (op V.1)), f.app (op V.1) s = G.presheaf.map iVU.op t := λ x, by {
-    -- Since `f` is surjective on stalks, we can find a preimage `s₀` of the germ of `t`
+
+  -- Now, we use the axiom of choice to create a function `local_preim` giving us for each point
+  -- `x : U` a neighborhood `V` and a local preimage for `t` on `V`.
+  choose V m iVU sf heq using show
+    ∀ x : U, ∃ (V : opens X) (m : x.1 ∈ V) (iVU : V ⟶ U) (s : F.presheaf.obj (op V)),
+      f.app (op V) s = G.presheaf.map iVU.op t, by
+  { intro x,
     obtain ⟨s₀,hs₀⟩ := (h x).2 (G.presheaf.germ x t),
     -- ... and this preimage must come from some section `s₁`
     obtain ⟨V₁,hxV₁,s₁,hs₁⟩ := F.presheaf.germ_exist x.1 s₀,
@@ -229,41 +217,37 @@ begin
     let s₂ := F.presheaf.map iV₂V₁.op s₁,
     use [V₂,hxV₂,iV₂U,s₂],
     rwa functor_to_types.naturality },
-  -- Now, we use the axiom of choice to create a function `local_preim` giving us for each point
-  -- `x : U` a neighborhood `V` and a local preimage for `t` on `V`.
-  have local_preim : Π x : U, Σ (V : open_nhds x.1) (iVU : V.1 ⟶ U),
-    {s : F.presheaf.obj (op V.1) // f.app (op V.1) s = G.presheaf.map iVU.op t } := λ x, by {
-    choose V iVU s heq using exists_local_preim x,
-    exact ⟨V,iVU,s,heq⟩ },
-  clear exists_local_preim,
-  -- In particular, we obtain a covering family of opens and a family of sections
-  let V : U → opens X := λ x, (local_preim x).1.1,
-  let sf : Π x : U, F.presheaf.obj (op (V x)) := λ x, (local_preim x).2.2.1,
-  have V_cover : U ≤ supr V := λ x hx, by {
+
+  have V_cover : U ≤ supr V,
+  { intros x hxU,
     rw [subtype.val_eq_coe, opens.mem_coe, opens.mem_supr],
-    exact ⟨⟨x,hx⟩,(local_preim _).1.2⟩ },
+    exact ⟨⟨x, hxU⟩, m ⟨x, hxU⟩⟩ },
   -- Using this data, we can glue all of the local preimages together, giving us our candidate
   -- for the preimage of `t`
-  obtain ⟨s, s_spec, -⟩ := F.exists_unique_gluing' V U (λ x, (local_preim x).2.1) V_cover sf _,
+  obtain ⟨s, s_spec, -⟩ := F.exists_unique_gluing' V U iVU V_cover sf _,
   use s,
   -- Note that we generated an additional goal: We need to show that our family of sections `sf`
   -- is actually compatible. We get that out of the way first.
   swap,
-  { intros x y,
-    -- The only thing we know about the sections `sf` is that their image under `f` equals (the
-    -- restriction of) `t`. It is at this point that we need injectivity of `f` again!
-    apply h_inj,
-    -- Here, both sides are equal to a restriction of `t`
-    transitivity ;
-      erw [functor_to_types.naturality, (local_preim _).2.2.2, ← functor_to_types.map_comp_apply],
+  { refine λ x y, section_ext F (V x ⊓ V y) _ _ (λ z, (h z).1 _),
+    erw [stalk_functor_map_germ_apply, stalk_functor_map_germ_apply],
+    rw [ functor_to_types.naturality, functor_to_types.naturality, heq, heq],
+    erw [← functor_to_types.map_comp_apply, ← functor_to_types.map_comp_apply],
     refl },
   -- The only thing left to prove is that `s` really is a preimage of `t`
   -- Of course, we show the equality locally
-  apply G.eq_of_locally_eq' V U (λ x, (local_preim x).2.1) V_cover,
+  apply G.eq_of_locally_eq' V U iVU V_cover,
   intro x,
   convert congr_arg (f.app (op (V x))) (s_spec x),
-  exacts [(functor_to_types.naturality _ _ f _ _).symm, (local_preim x).2.2.2.symm],
+  exact (functor_to_types.naturality _ _ f _ _).symm,
+  exact (heq x).symm,
 end
+
+lemma app_bijective_of_stalk_functor_map_bijective {F G : sheaf (Type v) X} (f : F ⟶ G)
+  (h : ∀ x : X, bijective ((stalk_functor (Type v) x).map f)) (U : opens X) :
+  bijective (f.app (op U)) :=
+⟨app_injective_of_stalk_functor_map_injective f (λ x, (h x).1) U,
+app_surjective_of_stalk_functor_map_bijective f h U⟩
 
 /--
 If all the stalk maps of map `f : F ⟶ G` of `Type`-valued sheaves are isomorphisms, then `f` is
